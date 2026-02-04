@@ -73,14 +73,15 @@ a {
 .wrap {
   min-height: 100%;
   display: grid;
-  place-items: center;
-  padding: 84px 18px 44px;
+  /* 标题固定在左上角，内容区域从其下方开始 */
+  place-items: start center;
+  padding: 120px 18px 44px;
 }
 
 .siteHeader {
   position: fixed;
-  top: 18px;
-  left: 18px;
+  top: 20px;
+  left: 20px;
   z-index: 10;
   pointer-events: none;
 }
@@ -101,7 +102,7 @@ a {
 
 @media (max-width: 700px) {
   .wrap {
-    padding-top: 76px;
+    padding-top: 104px;
   }
   .siteTitle {
     font-size: 28px;
@@ -348,8 +349,10 @@ code {
 
 /* --- new minimal UI --- */
 .panel.dropzone {
-  width: min(1320px, 96vw);
-  min-height: 560px;
+  /* 留出左右空气感，避免标题“像在容器里” */
+  width: min(1120px, 92vw);
+  /* 避免无意义的空白区域：高度交给内容与视口决定 */
+  min-height: unset;
 }
 
 .panel.dropzone::before {
@@ -440,8 +443,9 @@ code {
 .metricsBig {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  height: calc(100% - 56px);
+  align-content: stretch;
 }
 
 @media (max-width: 700px) {
@@ -459,6 +463,7 @@ code {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
   overflow: hidden;
   transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  height: 100%;
 }
 
 .metric:hover {
