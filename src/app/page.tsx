@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import type { MissionResult, ParseResult } from "../parser";
-import { parseEeLog } from "../parser";
+import { parseLatestEeLogFromFile } from "../parser";
 
 function formatDuration(v?: number): string {
   if (v == null) return "-";
@@ -53,8 +53,7 @@ export default function Page() {
     setError(null);
     setParse(null);
     try {
-      const text = await file.text();
-      const res = parseEeLog(text); // 默认 latest
+      const res = await parseLatestEeLogFromFile(file);
       setParse(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取或解析失败");
@@ -63,7 +62,6 @@ export default function Page() {
 
   return (
     <div className="wrap">
-      <div className="bgfx" />
       <div
         className={`panel dropzone ${isDragOver ? "dragover" : ""}`}
         onDragOver={(e) => {

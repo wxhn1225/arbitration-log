@@ -38,36 +38,10 @@ body {
   isolation: isolate;
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: -20vmax;
-  pointer-events: none;
-  background: radial-gradient(circle at 20% 20%, rgba(125, 211, 252, 0.22), transparent 42%),
-    radial-gradient(circle at 85% 25%, rgba(167, 139, 250, 0.18), transparent 46%),
-    radial-gradient(circle at 60% 90%, rgba(34, 211, 238, 0.12), transparent 52%);
-  filter: blur(38px);
-  opacity: 0.75;
-  animation: float 10s ease-in-out infinite alternate;
-  z-index: -2;
-}
-
+/* 轻量模式：不使用 heavy 伪元素背景（手机更稳） */
+body::before,
 body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.06), transparent 55%),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.02) 0px,
-      rgba(255, 255, 255, 0.02) 1px,
-      transparent 1px,
-      transparent 7px
-    );
-  mix-blend-mode: overlay;
-  opacity: 0.22;
-  z-index: -1;
+  display: none;
 }
 
 a {
@@ -92,8 +66,14 @@ a {
   border-radius: 16px;
   background: rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(12px);
   box-shadow: 0 18px 70px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+@supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
+  .siteHeader {
+    /* 轻量：禁用 header blur */
+    backdrop-filter: none;
+  }
 }
 
 .siteTitle {
@@ -115,20 +95,9 @@ a {
   }
 }
 
+/* 轻量模式：禁用超大模糊背景层 */
 .bgfx {
-  position: fixed;
-  inset: -40vmax;
-  z-index: -1;
-  background: conic-gradient(
-    from 210deg,
-    rgba(125, 211, 252, 0.22),
-    rgba(167, 139, 250, 0.18),
-    rgba(34, 211, 238, 0.12),
-    rgba(125, 211, 252, 0.22)
-  );
-  filter: blur(120px);
-  opacity: 0.85;
-  animation: spin 14s linear infinite;
+  display: none;
 }
 
 @keyframes spin {
@@ -160,14 +129,7 @@ a {
   font-size: 12px;
 }
 
-@keyframes float {
-  from {
-    transform: translate3d(-2%, -1%, 0) scale(1);
-  }
-  to {
-    transform: translate3d(2%, 1%, 0) scale(1.03);
-  }
-}
+/* （保留旧 keyframes 不影响，但此处不再使用） */
 
 .panel {
   position: relative;
@@ -176,8 +138,12 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;
   padding: 18px;
-  backdrop-filter: blur(14px);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, var(--shadow);
+}
+
+/* 轻量：禁用 backdrop-filter（手机上很吃 GPU） */
+.panel {
+  backdrop-filter: none !important;
 }
 
 .panelInner {
@@ -224,18 +190,17 @@ button,
   cursor: pointer;
   font-size: 14px;
   letter-spacing: 0.2px;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: none;
   user-select: none;
 }
 button:hover,
 .btn:hover {
   border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
 }
 
 .btn:active {
-  transform: translateY(0px) scale(0.99);
+  transform: none;
 }
 
 .btn:focus-visible,
@@ -373,8 +338,8 @@ code {
     rgba(167, 139, 250, 0.45),
     rgba(251, 113, 133, 0.18)
   );
-  background-size: 240% 240%;
-  animation: borderflow 4.8s ease-in-out infinite;
+  background-size: 100% 100%;
+  animation: none;
   mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -387,17 +352,7 @@ code {
   opacity: 0.55;
 }
 
-@keyframes borderflow {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
+/* 轻量：无边框动画 */
 
 .panel.dropzone.dragover {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 28px 120px rgba(0, 0, 0, 0.55),
@@ -446,6 +401,8 @@ code {
   letter-spacing: 0.2px;
 }
 
+/* 轻量：不使用忙碌动画 */
+
 .metricsBig {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -468,64 +425,20 @@ code {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
   overflow: hidden;
-  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  transition: none;
   height: 100%;
 }
 
+/* 轻量：去掉 hover/流光/辉光层 */
 .metric:hover {
-  transform: translateY(-4px) scale(1.01);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, 0 18px 80px rgba(0, 0, 0, 0.35);
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
 }
 
-.metric::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    120deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.10) 18%,
-    transparent 36%,
-    transparent 100%
-  );
-  transform: translateX(-55%);
-  animation: shimmer 2.8s ease-in-out infinite;
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.metric:nth-child(2)::before {
-  animation-delay: 0.35s;
-}
-.metric:nth-child(3)::before {
-  animation-delay: 0.7s;
-}
-.metric:nth-child(4)::before {
-  animation-delay: 1.05s;
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-65%);
-  }
-  55% {
-    transform: translateX(65%);
-  }
-  100% {
-    transform: translateX(65%);
-  }
-}
-
+.metric::before,
 .metric::after {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background: radial-gradient(circle at 30% 30%, rgba(125, 211, 252, 0.18), transparent 55%),
-    radial-gradient(circle at 70% 60%, rgba(167, 139, 250, 0.16), transparent 55%);
-  filter: blur(18px);
-  opacity: 0.55;
-  pointer-events: none;
+  display: none;
 }
 
 .metricLabel {
@@ -547,19 +460,7 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bgfx,
-  body::before,
-  .metric::before,
-  .panel.dropzone::before {
-    animation: none !important;
-  }
-  .metric,
-  .btn,
-  button {
-    transition: none !important;
-  }
-}
+/* 轻量：默认无动画，无需 reduced-motion 特判 */
 
 .metricA .metricValue {
   text-shadow: 0 0 22px rgba(125, 211, 252, 0.18);

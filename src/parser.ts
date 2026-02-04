@@ -414,3 +414,43 @@ export function parseEeLog(
   return mode === "all" ? parseAllEeLog(text) : parseLatestEeLog(text);
 }
 
+async function readTailText(file: File, tailBytes: number): Promise<string> {
+  const start = Math.max(0, file.size - tailBytes);
+  // 用 slice + text() 避免一次性读取整文件
+  return await file.slice(start).text();
+}
+
+export type ParseLatestFromFileOptions = {
+  initialTailBytes?: number;
+  maxTailBytes?: number;
+};
+
+/**
+ * 面向移动端的解析入口：只读取日志文件尾部并逐步扩大范围。
+ * 默认仅为“最新一次仲裁”服务（parseEeLog 的 latest 模式）。
+ */
+export async function parseLatestEeLogFromFile(
+  file: File,
+  options?: ParseLatestFromFileOptions
+): Promise<ParseResult> {
+  const initial = options?.initialTailBytes ?? 4 * 1024 * 1024; // 4MB
+  const max = options?.maxTailBytes ?? 32 * 1024 * 1024; // 32MB
+
+  // 逐步扩大尾部窗口，直到能稳定解析出一条任务（并尽量拿到节点）
+  let tail = Math.min(Math.max(256 * 1024, initial), Math.max(256 * 1024, max));
+  while (true) {
+    const text = await readTailText(file, tail);
+    const res = parseEeLog(text, { mode: "latest" });
+    const m = res.missions[0];
+
+    const needMore =
+      res.missions.length === 0 ||
+      (m != null && (m.nodeId == null || (m.status === "incomplete" && tail < max)));
+
+    if (!needMore) return res;
+    if (tail >= max) return res;
+
+    tail = Math.min(max, tail * 2);
+  }
+}
+
