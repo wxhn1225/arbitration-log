@@ -12,7 +12,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <header className="siteHeader">
+          <div className="siteTitle" aria-label="arbitration-log">
+            arbitration-log
+          </div>
+        </header>
+        {children}
+      </body>
     </html>
   );
 }

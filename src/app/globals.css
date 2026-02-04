@@ -74,7 +74,38 @@ a {
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 28px 18px 44px;
+  padding: 84px 18px 44px;
+}
+
+.siteHeader {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.siteTitle {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: lowercase;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 18px 80px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(125, 211, 252, 0.95), rgba(167, 139, 250, 0.92));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (max-width: 700px) {
+  .wrap {
+    padding-top: 76px;
+  }
+  .siteTitle {
+    font-size: 28px;
+  }
 }
 
 .bgfx {
@@ -367,26 +398,9 @@ code {
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin-bottom: 16px;
-}
-
-.brand {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 12px;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 1.2px;
-  text-transform: lowercase;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.brandSub {
-  font-size: 12px;
-  letter-spacing: 0.2px;
-  color: rgba(255, 255, 255, 0.55);
 }
 
 .actions {

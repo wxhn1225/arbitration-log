@@ -79,10 +79,6 @@ export default function Page() {
         }}
       >
         <div className="topbar">
-          <div className="brand">
-            arbitration-log
-          </div>
-
           <div className="actions">
             <span className="hint">仅限主机的 ee.log</span>
             {error ? <span className="err">解析失败</span> : null}
