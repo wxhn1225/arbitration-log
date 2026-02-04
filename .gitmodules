@@ -1,0 +1,3 @@
+[submodule "warframe-public-export-plus"]
+	path = warframe-public-export-plus
+	url = https://github.com/calamity-inc/warframe-public-export-plus.git
