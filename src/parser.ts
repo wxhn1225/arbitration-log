@@ -285,6 +285,34 @@ function parseLatestEeLog(text: string): ParseResult {
   const startLine0 = startIdx;
   const startTime = parseTime(lines[startIdx] ?? "");
 
+  let endIdx: number | undefined = undefined;
+  let endTime: number | undefined = undefined;
+
+  // 向下扫描，拿到“最后一条”匹配 SolNode 的结束标记（同一个任务期间可能会出现多次）
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+
+    // 补齐 missionName / nodeId（如果开始行缺失其中之一）
+    if (!missionName) {
+      const mName = line.match(reStartMissionName);
+      if (mName) missionName = mName[1]?.trim() || undefined;
+    }
+    if (!nodeId) {
+      const mHost = line.match(reHostLoading);
+      if (mHost) nodeId = mHost[1];
+    }
+
+    const mEnd = line.match(reEnd);
+    if (mEnd && nodeId && mEnd[1] === nodeId) {
+      endIdx = i;
+      endTime = parseTime(line);
+      // 不 break，继续找同 SolNode 的更靠后的结束标记
+    }
+  }
+
+  const endLimit0 = endIdx ?? lines.length - 1;
+
+  // 在 [startIdx, endLimit0] 区间内做统计
   let shieldDroneCount = 0;
   let lastSpawned: number | undefined = undefined;
   let lastOnAgentLine0: number | undefined = undefined;
@@ -292,14 +320,9 @@ function parseLatestEeLog(text: string): ParseResult {
   let lastOnAgentTime: number | undefined = undefined;
   let firstOnAgentLine0: number | undefined = undefined;
 
-  let endIdx: number | undefined = undefined;
-  let endTime: number | undefined = undefined;
-
-  // 向下扫描，直到遇到第一条匹配 SolNode 的结束标记
-  for (let i = startIdx + 1; i < lines.length; i++) {
+  for (let i = startIdx + 1; i <= endLimit0; i++) {
     const line = lines[i] ?? "";
 
-    // 补齐 missionName / nodeId（如果开始行缺失其中之一）
     if (!missionName) {
       const mName = line.match(reStartMissionName);
       if (mName) missionName = mName[1]?.trim() || undefined;
@@ -328,13 +351,6 @@ function parseLatestEeLog(text: string): ParseResult {
         if (Number.isFinite(n)) lastSpawned = n;
       }
     }
-
-    const mEnd = line.match(reEnd);
-    if (mEnd && nodeId && mEnd[1] === nodeId) {
-      endIdx = i;
-      endTime = parseTime(line);
-      break;
-    }
   }
 
   const durationSec =
@@ -343,6 +359,12 @@ function parseLatestEeLog(text: string): ParseResult {
     firstOnAgentTime != null && lastOnAgentTime != null
       ? lastOnAgentTime - firstOnAgentTime
       : undefined;
+  const effectiveSpanSec =
+    spanSec != null && Number.isFinite(spanSec) && spanSec > 0
+      ? spanSec
+      : durationSec != null && Number.isFinite(durationSec) && durationSec > 0
+        ? durationSec
+        : undefined;
 
   const mission: MissionResult = {
     index: 1,
@@ -358,7 +380,7 @@ function parseLatestEeLog(text: string): ParseResult {
     firstOnAgentCreatedTime: firstOnAgentTime,
     lastOnAgentCreatedTime: lastOnAgentTime,
     onAgentCreatedSpanSec: spanSec != null && Number.isFinite(spanSec) ? spanSec : undefined,
-    shieldDronePerMin: calcPerMin(shieldDroneCount, spanSec),
+    shieldDronePerMin: calcPerMin(shieldDroneCount, effectiveSpanSec),
     shieldDroneCount,
     status: endIdx != null ? "ok" : "incomplete",
     note:

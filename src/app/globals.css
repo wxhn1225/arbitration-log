@@ -1,13 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #0b1020;
-  --panel: rgba(255, 255, 255, 0.06);
-  --panel-2: rgba(255, 255, 255, 0.04);
+  --bg0: #060813;
+  --bg1: #0b1020;
+  --panel: rgba(255, 255, 255, 0.07);
+  --panel2: rgba(255, 255, 255, 0.04);
   --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.7);
+  --muted: rgba(255, 255, 255, 0.68);
   --border: rgba(255, 255, 255, 0.14);
+  --glow: rgba(125, 211, 252, 0.22);
+  --glow2: rgba(167, 139, 250, 0.16);
   --accent: #7dd3fc;
-  --bad: #fb7185;
+  --accent2: #a78bfa;
+  --danger: #fb7185;
 }
 
 * {
@@ -21,12 +25,14 @@ body {
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 700px at 30% 10%, rgba(125, 211, 252, 0.18), transparent 60%),
-    radial-gradient(1000px 600px at 80% 20%, rgba(251, 113, 133, 0.12), transparent 55%),
-    var(--bg);
+  background: radial-gradient(1200px 700px at 20% 10%, rgba(125, 211, 252, 0.22), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(167, 139, 250, 0.18), transparent 60%),
+    radial-gradient(800px 500px at 70% 80%, rgba(251, 113, 133, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Noto Sans", "Liberation Sans", sans-serif;
+  overflow-x: hidden;
 }
 
 a {
@@ -34,61 +40,90 @@ a {
 }
 
 .wrap {
-  max-width: 1100px;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
   padding: 28px 18px 44px;
-  margin: 0 auto;
+}
+
+.bgfx {
+  position: fixed;
+  inset: -40vmax;
+  z-index: -1;
+  background: conic-gradient(
+    from 210deg,
+    rgba(125, 211, 252, 0.18),
+    rgba(167, 139, 250, 0.14),
+    rgba(251, 113, 133, 0.10),
+    rgba(125, 211, 252, 0.18)
+  );
+  filter: blur(120px);
+  opacity: 0.65;
+  animation: spin 18s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .title {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .title h1 {
   margin: 0;
-  font-size: 20px;
-  letter-spacing: 0.2px;
+  font-size: 18px;
+  letter-spacing: 0.6px;
+  text-transform: lowercase;
 }
 
 .title .sub {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 16px;
-  backdrop-filter: blur(10px);
+  width: min(980px, 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  padding: 18px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 24px 90px rgba(0, 0, 0, 0.45);
 }
 
-.grid {
+.panelInner {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
 }
 
 @media (min-width: 900px) {
-  .grid {
-    grid-template-columns: 420px 1fr;
-    align-items: start;
+  .panelInner {
+    grid-template-columns: 1.1fr 1.4fr;
+    align-items: stretch;
   }
 }
 
 .drop {
   border: 1px dashed rgba(255, 255, 255, 0.28);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 18px;
-  background: var(--panel-2);
+  background: rgba(0, 0, 0, 0.18);
   transition: 120ms ease;
 }
 .drop.dragover {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.15);
+  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.18), 0 0 48px rgba(125, 211, 252, 0.14);
 }
 
 .row {
@@ -120,13 +155,6 @@ input[type="file"] {
   display: none;
 }
 
-.meta {
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .status {
   margin-top: 10px;
   font-size: 13px;
@@ -136,37 +164,7 @@ input[type="file"] {
   color: var(--text);
 }
 .status .bad {
-  color: var(--bad);
-}
-
-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-
-thead th {
-  text-align: left;
-  font-weight: 600;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid var(--border);
-}
-
-tbody td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 13px;
-  vertical-align: top;
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
+  color: var(--danger);
 }
 
 .pill {
@@ -182,20 +180,66 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
-.warn {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(251, 113, 133, 0.35);
-  background: rgba(251, 113, 133, 0.08);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 13px;
-}
-
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  height: 100%;
+}
+
+@media (min-width: 900px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+
+.metric {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.12));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.metricLabel {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.70);
+}
+
+.metricValue {
+  margin-top: 8px;
+  font-size: 34px;
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+}
+
+.metricValue small {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.70);
+  margin-left: 8px;
+}
+
+.metricHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.accentLine {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.65), rgba(167, 139, 250, 0.55), transparent);
+  opacity: 0.65;
+  margin: 12px 0 10px;
 }
 
