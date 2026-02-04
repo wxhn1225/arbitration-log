@@ -81,18 +81,18 @@ export default function Page() {
         <div className="topbar">
           <div className="brand">
             arbitration-log
-            <span className="brandSub">latest only</span>
           </div>
 
           <div className="actions">
+            <span className="hint">仅限主机的 ee.log</span>
             {error ? <span className="err">解析失败</span> : null}
             {m?.status === "incomplete" ? <span className="warnTag">incomplete</span> : null}
-            <label className="btn" htmlFor="file">
+            <label className="btn primary" htmlFor="file">
               上传
             </label>
             <button
               type="button"
-              className="btn"
+              className="btn ghost"
               onClick={() => {
                 setError(null);
                 setParse(null);

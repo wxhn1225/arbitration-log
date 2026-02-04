@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
-  --bg0: #060813;
-  --bg1: #0b1020;
+  --bg0: #0a1026;
+  --bg1: #101a3a;
   --panel: rgba(255, 255, 255, 0.07);
   --panel2: rgba(255, 255, 255, 0.04);
   --text: rgba(255, 255, 255, 0.92);
@@ -12,6 +12,7 @@
   --accent: #7dd3fc;
   --accent2: #a78bfa;
   --danger: #fb7185;
+  --shadow: 0 26px 120px rgba(0, 0, 0, 0.45);
 }
 
 * {
@@ -25,14 +26,44 @@ body {
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 700px at 20% 10%, rgba(125, 211, 252, 0.22), transparent 55%),
-    radial-gradient(900px 600px at 85% 15%, rgba(167, 139, 250, 0.18), transparent 60%),
-    radial-gradient(800px 500px at 70% 80%, rgba(251, 113, 133, 0.08), transparent 60%),
+  background: radial-gradient(1100px 650px at 18% 10%, rgba(125, 211, 252, 0.30), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(167, 139, 250, 0.26), transparent 60%),
+    radial-gradient(900px 560px at 60% 92%, rgba(34, 211, 238, 0.16), transparent 62%),
     linear-gradient(180deg, var(--bg0), var(--bg1));
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Noto Sans", "Liberation Sans", sans-serif;
   overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20vmax;
+  pointer-events: none;
+  background: radial-gradient(circle at 20% 20%, rgba(125, 211, 252, 0.22), transparent 42%),
+    radial-gradient(circle at 85% 25%, rgba(167, 139, 250, 0.18), transparent 46%),
+    radial-gradient(circle at 60% 90%, rgba(34, 211, 238, 0.12), transparent 52%);
+  filter: blur(38px);
+  opacity: 0.75;
+  animation: float 10s ease-in-out infinite alternate;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.06), transparent 55%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0px,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 7px
+    );
+  mix-blend-mode: overlay;
+  opacity: 0.22;
 }
 
 a {
@@ -52,14 +83,14 @@ a {
   z-index: -1;
   background: conic-gradient(
     from 210deg,
-    rgba(125, 211, 252, 0.18),
-    rgba(167, 139, 250, 0.14),
-    rgba(251, 113, 133, 0.10),
-    rgba(125, 211, 252, 0.18)
+    rgba(125, 211, 252, 0.22),
+    rgba(167, 139, 250, 0.18),
+    rgba(34, 211, 238, 0.12),
+    rgba(125, 211, 252, 0.22)
   );
   filter: blur(120px);
-  opacity: 0.65;
-  animation: spin 18s linear infinite;
+  opacity: 0.85;
+  animation: spin 14s linear infinite;
 }
 
 @keyframes spin {
@@ -91,14 +122,24 @@ a {
   font-size: 12px;
 }
 
+@keyframes float {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, 1%, 0) scale(1.03);
+  }
+}
+
 .panel {
+  position: relative;
   width: min(980px, 100%);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;
   padding: 18px;
   backdrop-filter: blur(14px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 24px 90px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, var(--shadow);
 }
 
 .panelInner {
@@ -140,15 +181,46 @@ button,
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+  user-select: none;
 }
 button:hover,
 .btn:hover {
   border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0px) scale(0.99);
+}
+
+.btn:focus-visible,
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.18);
+}
+
+.btn.primary {
+  border-color: rgba(125, 211, 252, 0.42);
+  background: linear-gradient(135deg, rgba(125, 211, 252, 0.95), rgba(167, 139, 250, 0.92));
+  color: rgba(10, 16, 38, 0.92);
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(125, 211, 252, 0.18);
+}
+.btn.primary:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 14px 44px rgba(125, 211, 252, 0.22);
+}
+
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 input[type="file"] {
@@ -245,8 +317,8 @@ code {
 
 /* --- new minimal UI --- */
 .panel.dropzone {
-  width: min(1200px, 96vw);
-  min-height: 440px;
+  width: min(1320px, 96vw);
+  min-height: 560px;
 }
 
 .panel.dropzone::before {
@@ -261,6 +333,11 @@ code {
     rgba(167, 139, 250, 0.45),
     rgba(251, 113, 133, 0.18)
   );
+  background-size: 240% 240%;
+  animation: borderflow 4.8s ease-in-out infinite;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -268,6 +345,18 @@ code {
   mask-composite: exclude;
   pointer-events: none;
   opacity: 0.55;
+}
+
+@keyframes borderflow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .panel.dropzone.dragover {
@@ -286,9 +375,10 @@ code {
 .brand {
   display: inline-flex;
   align-items: baseline;
-  gap: 10px;
-  font-size: 16px;
-  letter-spacing: 0.8px;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
   text-transform: lowercase;
   color: rgba(255, 255, 255, 0.9);
 }
@@ -323,11 +413,21 @@ code {
   border-radius: 999px;
 }
 
+.hint {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.12);
+  padding: 7px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.2px;
+}
+
 .metricsBig {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  height: calc(100% - 48px);
+  height: calc(100% - 56px);
 }
 
 @media (max-width: 700px) {
@@ -344,6 +444,52 @@ code {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
   overflow: hidden;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.metric:hover {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, 0 18px 80px rgba(0, 0, 0, 0.35);
+}
+
+.metric::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.10) 18%,
+    transparent 36%,
+    transparent 100%
+  );
+  transform: translateX(-55%);
+  animation: shimmer 2.8s ease-in-out infinite;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.metric:nth-child(2)::before {
+  animation-delay: 0.35s;
+}
+.metric:nth-child(3)::before {
+  animation-delay: 0.7s;
+}
+.metric:nth-child(4)::before {
+  animation-delay: 1.05s;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-65%);
+  }
+  55% {
+    transform: translateX(65%);
+  }
+  100% {
+    transform: translateX(65%);
+  }
 }
 
 .metric::after {
@@ -360,19 +506,34 @@ code {
 .metricLabel {
   position: relative;
   z-index: 1;
-  font-size: 12px;
-  letter-spacing: 0.35px;
-  color: rgba(255, 255, 255, 0.62);
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.70);
 }
 
 .metricValue {
   position: relative;
   z-index: 1;
   margin-top: 12px;
-  font-size: 46px;
+  font-size: 64px;
   line-height: 1.02;
   font-weight: 800;
-  letter-spacing: -1.2px;
+  letter-spacing: -1.6px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bgfx,
+  body::before,
+  .metric::before,
+  .panel.dropzone::before {
+    animation: none !important;
+  }
+  .metric,
+  .btn,
+  button {
+    transition: none !important;
+  }
 }
 
 .metricA .metricValue {
