@@ -243,3 +243,148 @@ code {
   margin: 12px 0 10px;
 }
 
+/* --- new minimal UI --- */
+.panel.dropzone {
+  width: min(1200px, 96vw);
+  min-height: 440px;
+}
+
+.panel.dropzone::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 18px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(125, 211, 252, 0.55),
+    rgba(167, 139, 250, 0.45),
+    rgba(251, 113, 133, 0.18)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.panel.dropzone.dragover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 28px 120px rgba(0, 0, 0, 0.55),
+    0 0 70px rgba(125, 211, 252, 0.14);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 16px;
+  letter-spacing: 0.8px;
+  text-transform: lowercase;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.brandSub {
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.err {
+  font-size: 12px;
+  color: rgba(251, 113, 133, 0.9);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  background: rgba(251, 113, 133, 0.08);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.warnTag {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.metricsBig {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  height: calc(100% - 48px);
+}
+
+@media (max-width: 700px) {
+  .metricsBig {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metric {
+  position: relative;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  background: radial-gradient(140% 120% at 20% 10%, rgba(255, 255, 255, 0.10), rgba(0, 0, 0, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+  overflow: hidden;
+}
+
+.metric::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle at 30% 30%, rgba(125, 211, 252, 0.18), transparent 55%),
+    radial-gradient(circle at 70% 60%, rgba(167, 139, 250, 0.16), transparent 55%);
+  filter: blur(18px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.metricLabel {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  letter-spacing: 0.35px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.metricValue {
+  position: relative;
+  z-index: 1;
+  margin-top: 12px;
+  font-size: 46px;
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -1.2px;
+}
+
+.metricA .metricValue {
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.18);
+}
+.metricB .metricValue {
+  text-shadow: 0 0 22px rgba(167, 139, 250, 0.16);
+}
+.metricC .metricValue {
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.14);
+}
+.metricD .metricValue {
+  text-shadow: 0 0 22px rgba(255, 255, 255, 0.08);
+}
+
