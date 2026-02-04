@@ -245,9 +245,10 @@ function parseLatestEeLog(text: string): ParseResult {
   const warnings: string[] = [];
   const lines = text.split(/\r?\n/);
 
-  // 从末尾往前找最近的“任务开始”标记：
-  // - 优先 Host loading（带 SolNode）
-  // - 否则 Mission name
+  // 从末尾往前找最近的“任务开始”标记（必须带“仲裁”）：
+  // Script [Info]: ThemedSquadOverlay.lua: Mission name: <任意> - 仲裁
+  // 下一行应为节点：
+  // Script [Info]: ThemedSquadOverlay.lua: Host loading {"name":"SolNodeXX_EliteAlert"} with MissionInfo:
   let startIdx: number | null = null;
   let startKind: MissionStartKind | null = null;
   let nodeId: string | undefined = undefined;
@@ -255,13 +256,6 @@ function parseLatestEeLog(text: string): ParseResult {
 
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i] ?? "";
-    const mHost = line.match(reHostLoading);
-    if (mHost) {
-      startIdx = i;
-      startKind = "hostLoading";
-      nodeId = mHost[1];
-      break;
-    }
     const mName = line.match(reStartMissionName);
     if (mName) {
       startIdx = i;
@@ -275,11 +269,28 @@ function parseLatestEeLog(text: string): ParseResult {
     return { missions: [], warnings: ["未在日志中找到任何仲裁任务开始标记。"] };
   }
 
-  // 如果开始是 Host loading，任务名通常在上一行
-  if (!missionName && startIdx > 0) {
-    const prev = lines[startIdx - 1] ?? "";
-    const mPrevName = prev.match(reStartMissionName);
-    if (mPrevName) missionName = mPrevName[1]?.trim() || undefined;
+  // 开始标记下一行应为 Host loading（节点）
+  const nextLine = lines[startIdx + 1] ?? "";
+  const nextHost = nextLine.match(reHostLoading);
+  if (nextHost) {
+    nodeId = nextHost[1];
+  } else {
+    // 兼容极少数情况下节点行不是紧贴下一行（但仍然只以 Mission name 行作为开始）
+    let found: string | undefined = undefined;
+    for (let j = startIdx + 1; j < Math.min(lines.length, startIdx + 15); j++) {
+      const l = lines[j] ?? "";
+      const m = l.match(reHostLoading);
+      if (m) {
+        found = m[1];
+        break;
+      }
+    }
+    if (found) {
+      nodeId = found;
+      warnings.push("开始标记后的下一行未匹配到节点，已在后续行中补抓 SolNode。");
+    } else {
+      warnings.push("开始标记后的下一行未匹配到节点（SolNode），结束标记将无法严格匹配。");
+    }
   }
 
   const startLine0 = startIdx;
@@ -297,10 +308,7 @@ function parseLatestEeLog(text: string): ParseResult {
       const mName = line.match(reStartMissionName);
       if (mName) missionName = mName[1]?.trim() || undefined;
     }
-    if (!nodeId) {
-      const mHost = line.match(reHostLoading);
-      if (mHost) nodeId = mHost[1];
-    }
+    // nodeId 理论上来自开始标记下一行；这里不再“随便补抓”，避免误配
 
     const mEnd = line.match(reEnd);
     if (mEnd && nodeId && mEnd[1] === nodeId) {
