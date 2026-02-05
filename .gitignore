@@ -25,3 +25,11 @@ Thumbs.db
 *.log
 note.md
 logic.md
+
+## Wails build artifacts
+go-analyzer-wails/build/bin/
+go-analyzer-wails/frontend/dist/
+go-analyzer-wails/frontend/node_modules/
+go-analyzer-wails/frontend/package-lock.json
+go-analyzer-wails/frontend/package.json.md5
+

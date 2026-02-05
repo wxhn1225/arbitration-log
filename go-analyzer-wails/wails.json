@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "arbitration-analyzer-gui",
+  "outputfilename": "go-analyzer-wails",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "wxhn1225",
+    "email": "45218021+wxhn1225@users.noreply.github.com"
+  }
+}
