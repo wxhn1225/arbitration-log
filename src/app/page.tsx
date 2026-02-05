@@ -262,7 +262,7 @@ export default function Page() {
         </div>
 
         <div className="helpLine">
-          <span>ee.log 路径：%LOCALAPPDATA%\\Warframe</span>
+          <span>ee.log 路径：%LOCALAPPDATA%\Warframe</span>
           <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
         </div>
 
