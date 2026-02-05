@@ -1,8 +1,16 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { MissionResult, ParseResult } from "../parser";
-import { parseLatestEeLogFromFile } from "../parser";
+import { parseRecentValidEeLogFromFile } from "../parser";
+
+type NodeMeta = {
+  nodeId: string;
+  nodeName?: string;
+  systemName?: string;
+  missionType?: string;
+  faction?: string;
+};
 
 function formatDuration(v?: number): string {
   if (v == null) return "-";
@@ -27,33 +35,65 @@ export default function Page() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nodeMap, setNodeMap] = useState<Record<string, NodeMeta> | null>(null);
 
-  const m = useMemo<MissionResult | null>(() => {
-    return parse?.missions?.[0] ?? null;
-  }, [parse]);
+  const missions = useMemo<MissionResult[]>(() => parse?.missions ?? [], [parse]);
 
-  const metrics = useMemo(() => {
+  useEffect(() => {
+    // 轻量：只加载一次节点映射（由 build 时脚本生成到 public/）
+    let cancelled = false;
+    fetch("./node-map.zh.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        if (json && typeof json === "object") setNodeMap(json as Record<string, NodeMeta>);
+      })
+      .catch(() => {
+        // 忽略：无映射时仅展示 nodeId
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const metricsFor = (m?: MissionResult | null) => {
     const enemySpawned = m?.spawnedAtEnd ?? undefined;
     const drones = m?.shieldDroneCount ?? undefined;
     const totalSec =
-      m?.onAgentCreatedSpanSec != null && m.onAgentCreatedSpanSec > 0
-        ? m.onAgentCreatedSpanSec
-        : m?.durationSec != null && m.durationSec > 0
-          ? m.durationSec
-          : undefined;
+      m?.stateDurationSec != null && m.stateDurationSec > 0
+        ? m.stateDurationSec
+        : m?.onAgentCreatedSpanSec != null && m.onAgentCreatedSpanSec > 0
+          ? m.onAgentCreatedSpanSec
+          : m?.durationSec != null && m.durationSec > 0
+            ? m.durationSec
+            : undefined;
     const dronesPerMin =
       drones != null && totalSec != null && totalSec > 0
         ? drones / (totalSec / 60)
         : undefined;
-
     return { enemySpawned, drones, totalSec, dronesPerMin };
-  }, [m]);
+  };
+
+  const nodeInfoLine = (m: MissionResult) => {
+    const meta = m.nodeId ? nodeMap?.[m.nodeId] : undefined;
+    const parts = [
+      meta?.nodeName,
+      meta?.systemName,
+      meta?.missionType,
+      meta?.faction,
+    ].filter(Boolean) as string[];
+    const left = parts.join(" · ");
+    const right = m.nodeId ? `(${m.nodeId})` : "";
+    if (!left && !right) return "";
+    if (left && right) return `${left} ${right}`;
+    return left || right;
+  };
 
   const handleFile = async (file: File) => {
     setError(null);
     setParse(null);
     try {
-      const res = await parseLatestEeLogFromFile(file);
+      const res = await parseRecentValidEeLogFromFile(file, { count: 2, minDurationSec: 60 });
       setParse(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取或解析失败");
@@ -80,7 +120,9 @@ export default function Page() {
           <div className="actions">
             <span className="hint">仅限主机的 ee.log</span>
             {error ? <span className="err">解析失败</span> : null}
-            {m?.status === "incomplete" ? <span className="warnTag">incomplete</span> : null}
+            {missions.some((m) => m.status === "incomplete") ? (
+              <span className="warnTag">incomplete</span>
+            ) : null}
             <label className="btn primary" htmlFor="file">
               上传
             </label>
@@ -108,23 +150,47 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="metricsBig">
-          <div className="metric metricA">
-            <div className="metricLabel">无人机生成</div>
-            <div className="metricValue">{metrics.drones ?? "-"}</div>
-          </div>
-          <div className="metric metricB">
-            <div className="metricLabel">敌人生成</div>
-            <div className="metricValue">{metrics.enemySpawned ?? "-"}</div>
-          </div>
-          <div className="metric metricC">
-            <div className="metricLabel">无人机生成/分钟</div>
-            <div className="metricValue">{formatPerMin(metrics.dronesPerMin)}</div>
-          </div>
-          <div className="metric metricD">
-            <div className="metricLabel">总时间</div>
-            <div className="metricValue">{formatDuration(metrics.totalSec)}</div>
-          </div>
+        <div className="helpLine">
+          <span>ee.log 路径：%LOCALAPPDATA%\\Warframe</span>
+          <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
+        </div>
+
+        <div className="runs">
+          {missions.length === 0 ? (
+            <div className="empty">暂无有效记录</div>
+          ) : (
+            missions.map((m, idx) => {
+              const metrics = metricsFor(m);
+              return (
+                <div key={idx} className="runBlock">
+                  <div className="runHeader">
+                    <div className="runTitle">最近有效第 {idx + 1} 把</div>
+                    <div className="runSub">
+                      {nodeInfoLine(m) || (m.nodeId ?? "-")}
+                    </div>
+                  </div>
+                  <div className="metricsBig">
+                    <div className="metric metricA">
+                      <div className="metricLabel">无人机生成</div>
+                      <div className="metricValue">{metrics.drones ?? "-"}</div>
+                    </div>
+                    <div className="metric metricB">
+                      <div className="metricLabel">敌人生成</div>
+                      <div className="metricValue">{metrics.enemySpawned ?? "-"}</div>
+                    </div>
+                    <div className="metric metricC">
+                      <div className="metricLabel">无人机生成/分钟</div>
+                      <div className="metricValue">{formatPerMin(metrics.dronesPerMin)}</div>
+                    </div>
+                    <div className="metric metricD">
+                      <div className="metricLabel">总时间</div>
+                      <div className="metricValue">{formatDuration(metrics.totalSec)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

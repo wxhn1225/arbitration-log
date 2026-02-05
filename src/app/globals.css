@@ -373,6 +373,78 @@ code {
   gap: 10px;
 }
 
+.helpLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.70);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 700px) {
+  .helpLine {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.runs {
+  display: grid;
+  gap: 14px;
+}
+
+.empty {
+  padding: 18px 12px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.10);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+}
+
+.runBlock {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.runHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.runTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.runSub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  .runHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .runSub {
+    text-align: left;
+  }
+}
+
 .err {
   font-size: 12px;
   color: rgba(251, 113, 133, 0.9);

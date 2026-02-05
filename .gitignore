@@ -1,8 +1,27 @@
-node_modules
-.next
-out
-dist
-.DS_Store
-*.local
-*.log
+## dependencies
+node_modules/
 
+## build output
+.next/
+out/
+dist/
+
+## caches / logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+## OS / editor
+.DS_Store
+Thumbs.db
+
+## local env
+*.local
+.env
+.env.*.local
+
+## user data (do not commit logs)
+*.log
+note.md
+logic.md

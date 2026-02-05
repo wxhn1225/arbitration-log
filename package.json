@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-node-map.mjs",
     "build": "next build",
     "preview": "npx serve out"
   },

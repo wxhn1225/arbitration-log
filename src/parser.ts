@@ -2,7 +2,7 @@ export type MissionStartKind = "missionName" | "hostLoading";
 
 export type MissionResult = {
   index: number;
-  nodeId?: string; // e.g. SolNode94
+  nodeId?: string; // e.g. SolNode64, CrewBattleNode523, ...
   missionName?: string; // e.g. 兰麦地亚 (海王星)
   startKind: MissionStartKind;
   startLine: number; // 1-based
@@ -10,6 +10,9 @@ export type MissionResult = {
   startTime?: number; // seconds, from log prefix
   endTime?: number;
   durationSec?: number;
+  stateStartedTime?: number; // SS_STARTED timestamp
+  stateEndingTime?: number; // SS_ENDING timestamp
+  stateDurationSec?: number; // stateEndingTime - stateStartedTime
   spawnedAtEnd?: number; // Spawned N from last OnAgentCreated in segment
   firstOnAgentCreatedTime?: number;
   lastOnAgentCreatedTime?: number;
@@ -31,10 +34,15 @@ const reStartMissionName =
   /Script \[Info\]: ThemedSquadOverlay\.lua: Mission name:\s*(.+?)\s*-\s*仲裁/;
 
 const reHostLoading =
-  /Script \[Info\]: ThemedSquadOverlay\.lua: Host loading .*"name":"(SolNode\d+)_EliteAlert"/;
+  /Script \[Info\]: ThemedSquadOverlay\.lua: Host loading .*"name":"([^"]+)_EliteAlert"/;
 
 const reEnd =
-  /Script \[Info\]: Background\.lua: EliteAlertMission at (SolNode\d+)\b/;
+  /Script \[Info\]: Background\.lua: EliteAlertMission at ([A-Za-z0-9_]+)\b/;
+
+const reStateStarted =
+  /GameRulesImpl - changing state from SS_WAITING_FOR_PLAYERS to SS_STARTED/;
+const reStateEnding =
+  /GameRulesImpl - changing state from SS_STARTED to SS_ENDING/;
 
 const reAnyOnAgentCreated = /AI \[Info\]: OnAgentCreated\b/;
 const reSpawned = /\bSpawned\s+(\d+)\b/;
@@ -46,6 +54,16 @@ function parseTime(line: string): number | undefined {
   if (!m) return undefined;
   const v = Number(m[1]);
   return Number.isFinite(v) ? v : undefined;
+}
+
+function pickTotalSec(m: Pick<MissionResult, "stateDurationSec" | "onAgentCreatedSpanSec" | "durationSec">) {
+  const a = m.stateDurationSec;
+  if (a != null && Number.isFinite(a) && a > 0) return a;
+  const b = m.onAgentCreatedSpanSec;
+  if (b != null && Number.isFinite(b) && b > 0) return b;
+  const c = m.durationSec;
+  if (c != null && Number.isFinite(c) && c > 0) return c;
+  return undefined;
 }
 
 const calcPerMin = (count: number, spanSec?: number): number | undefined => {
@@ -425,6 +443,152 @@ export type ParseLatestFromFileOptions = {
   maxTailBytes?: number;
 };
 
+export type ParseRecentValidFromFileOptions = ParseLatestFromFileOptions & {
+  count?: number; // 最近有效几把
+  minDurationSec?: number; // 小于该时长视为无效（默认 60s）
+};
+
+function parseRecentMissionsInText(text: string): ParseResult {
+  const warnings: string[] = [];
+  const lines = text.split(/\r?\n/);
+
+  const startIdxs: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (reStartMissionName.test(line)) startIdxs.push(i);
+  }
+
+  if (startIdxs.length === 0) {
+    return { missions: [], warnings: ["未在日志中找到任何仲裁任务开始标记。"] };
+  }
+
+  const missions: MissionResult[] = [];
+
+  for (let s = 0; s < startIdxs.length; s++) {
+    const startIdx = startIdxs[s]!;
+    const boundary = s + 1 < startIdxs.length ? startIdxs[s + 1]! - 1 : lines.length - 1;
+    const startLine = lines[startIdx] ?? "";
+    const mName = startLine.match(reStartMissionName);
+    const missionName = mName?.[1]?.trim() || undefined;
+
+    // 节点：优先下一行，否则向后最多 15 行（且不跨越下一次开始标记）
+    let nodeId: string | undefined = undefined;
+    const nextLine = lines[startIdx + 1] ?? "";
+    const nextHost = nextLine.match(reHostLoading);
+    if (nextHost) {
+      nodeId = nextHost[1];
+    } else {
+      for (let j = startIdx + 1; j <= Math.min(boundary, startIdx + 15); j++) {
+        const l = lines[j] ?? "";
+        const m = l.match(reHostLoading);
+        if (m) {
+          nodeId = m[1];
+          break;
+        }
+      }
+    }
+
+    const startTime = parseTime(startLine);
+
+    // 在本次边界内选择“最后一条”结束标记（避免早期初始化的同名打印）
+    let endIdx: number | undefined = undefined;
+    let endTime: number | undefined = undefined;
+    if (nodeId) {
+      for (let i = startIdx + 1; i <= boundary; i++) {
+        const line = lines[i] ?? "";
+        const mEnd = line.match(reEnd);
+        if (mEnd && mEnd[1] === nodeId) {
+          endIdx = i;
+          endTime = parseTime(line);
+        }
+      }
+    }
+
+    const endLimit0 = endIdx ?? boundary;
+
+    // 区间统计
+    let shieldDroneCount = 0;
+    let lastSpawned: number | undefined = undefined;
+    let firstOnAgentTime: number | undefined = undefined;
+    let lastOnAgentTime: number | undefined = undefined;
+    let stateStartedTime: number | undefined = undefined;
+    let stateEndingTime: number | undefined = undefined;
+
+    for (let i = startIdx + 1; i <= endLimit0; i++) {
+      const line = lines[i] ?? "";
+
+      if (reShieldDrone.test(line)) shieldDroneCount++;
+
+      if (reAnyOnAgentCreated.test(line)) {
+        const t = parseTime(line);
+        if (t != null) {
+          if (firstOnAgentTime == null) firstOnAgentTime = t;
+          lastOnAgentTime = t;
+        }
+        const sm = line.match(reSpawned);
+        if (sm) {
+          const n = Number(sm[1]);
+          if (Number.isFinite(n)) lastSpawned = n;
+        }
+      }
+
+      if (stateStartedTime == null && reStateStarted.test(line)) {
+        const t = parseTime(line);
+        if (t != null) stateStartedTime = t;
+      }
+      // 结束态可能打印多次：取最后一次更稳
+      if (reStateEnding.test(line)) {
+        const t = parseTime(line);
+        if (t != null) stateEndingTime = t;
+      }
+    }
+
+    const durationSec =
+      startTime != null && endTime != null ? endTime - startTime : undefined;
+    const onAgentSpanSec =
+      firstOnAgentTime != null && lastOnAgentTime != null
+        ? lastOnAgentTime - firstOnAgentTime
+        : undefined;
+    const stateDurationSec =
+      stateStartedTime != null && stateEndingTime != null
+        ? stateEndingTime - stateStartedTime
+        : undefined;
+
+    const totalSec = pickTotalSec({
+      stateDurationSec,
+      onAgentCreatedSpanSec: onAgentSpanSec,
+      durationSec,
+    });
+
+    missions.push({
+      index: missions.length + 1,
+      nodeId,
+      missionName,
+      startKind: "missionName",
+      startLine: startIdx + 1,
+      endLine: endIdx != null ? endIdx + 1 : undefined,
+      startTime,
+      endTime,
+      durationSec: durationSec != null && Number.isFinite(durationSec) ? durationSec : undefined,
+      stateStartedTime,
+      stateEndingTime,
+      stateDurationSec:
+        stateDurationSec != null && Number.isFinite(stateDurationSec) ? stateDurationSec : undefined,
+      spawnedAtEnd: lastSpawned,
+      firstOnAgentCreatedTime: firstOnAgentTime,
+      lastOnAgentCreatedTime: lastOnAgentTime,
+      onAgentCreatedSpanSec:
+        onAgentSpanSec != null && Number.isFinite(onAgentSpanSec) ? onAgentSpanSec : undefined,
+      shieldDronePerMin: calcPerMin(shieldDroneCount, totalSec),
+      shieldDroneCount,
+      status: endIdx != null ? "ok" : "incomplete",
+      note: totalSec != null ? `totalSec=${totalSec.toFixed(3)}` : undefined,
+    });
+  }
+
+  return { missions, warnings };
+}
+
 /**
  * 面向移动端的解析入口：只读取日志文件尾部并逐步扩大范围。
  * 默认仅为“最新一次仲裁”服务（parseEeLog 的 latest 模式）。
@@ -451,6 +615,45 @@ export async function parseLatestEeLogFromFile(
     if (tail >= max) return res;
 
     tail = Math.min(max, tail * 2);
+  }
+}
+
+/**
+ * 解析“最近有效的 N 把仲裁”（默认 2 把），并排除时长 < 60s 的记录。
+ * 为移动端优化：仅读取文件尾部并逐步扩大窗口。
+ */
+export async function parseRecentValidEeLogFromFile(
+  file: File,
+  options?: ParseRecentValidFromFileOptions
+): Promise<ParseResult> {
+  const count = options?.count ?? 2;
+  const minDurationSec = options?.minDurationSec ?? 60;
+  const initial = options?.initialTailBytes ?? 4 * 1024 * 1024; // 4MB
+  const max = options?.maxTailBytes ?? 48 * 1024 * 1024; // 48MB
+
+  let tail = Math.min(Math.max(256 * 1024, initial), Math.max(256 * 1024, max));
+  while (true) {
+    const text = await readTailText(file, tail);
+    const parsed = parseRecentMissionsInText(text);
+    const valid = parsed.missions.filter((m) => {
+      const totalSec = pickTotalSec(m);
+      return totalSec != null && totalSec >= minDurationSec;
+    });
+
+    const picked = valid.slice(Math.max(0, valid.length - count));
+
+    const warnings = [...parsed.warnings];
+    if (picked.length < count && tail < max) {
+      tail = Math.min(max, tail * 2);
+      continue;
+    }
+    if (picked.length < count) {
+      warnings.push(`有效记录不足：仅找到 ${picked.length} 把（过滤阈值 ${minDurationSec}s）。`);
+    }
+
+    // 重新编号 index（展示用）
+    const missions = picked.map((m, idx) => ({ ...m, index: idx + 1 }));
+    return { missions, warnings };
   }
 }
 
