@@ -1,4 +1,4 @@
-export type MissionStartKind = "missionName" | "hostLoading";
+export type MissionStartKind = "missionName" | "missionVote" | "hostLoading";
 
 export type MissionResult = {
   index: number;
@@ -40,6 +40,12 @@ const reTimePrefix = /^(\d+(?:\.\d+)?)\s+/;
 
 const reStartMissionName =
   /Script \[Info\]: ThemedSquadOverlay\.lua: Mission name:\s*(.+?)\s*-\s*仲裁/;
+
+// 某些日志没有 Mission name 行，但会有投票/选任务行（仍含 “- 仲裁” 与 NodeId）
+// e.g. ThemedSquadOverlay.lua: ShowMissionVote Casta (谷神星) - 仲裁 - 等级 ... (SolNode149_EliteAlert) -1
+const reStartMissionVote =
+  /Script \[Info\]: ThemedSquadOverlay\.lua: ShowMissionVote\s+(.+?)\s*-\s*仲裁\b/;
+const reVoteNodeId = /\(([A-Za-z0-9_]+)_EliteAlert\)/;
 
 const reHostLoading =
   /Script \[Info\]: ThemedSquadOverlay\.lua: Host loading .*"name":"([^"]+)_EliteAlert"/;
@@ -652,6 +658,7 @@ export async function parseRecentValidEeLogFromFile(
   let lineNo = 0;
 
   type Run = {
+    startKind: MissionStartKind;
     startLine: number;
     endLine?: number;
     startTime?: number;
@@ -742,7 +749,7 @@ export async function parseRecentValidEeLogFromFile(
       nodeId: run.nodeId,
       missionName: run.missionName,
       missionKind: run.missionKind ?? "unknown",
-      startKind: "missionName",
+      startKind: run.startKind,
       startLine: run.startLine,
       endLine: run.endLine,
       startTime: run.startTime,
@@ -783,17 +790,29 @@ export async function parseRecentValidEeLogFromFile(
   const feedLine = (line: string) => {
     lineNo++;
 
-    const mStart = line.match(reStartMissionName);
-    if (mStart) {
-      // 新开始出现：先结算上一把（边界到上一行）
+    const mStartName = line.match(reStartMissionName);
+    const mStartVote = line.match(reStartMissionVote);
+    if (mStartName || mStartVote) {
+      // 新开始出现：
+      // - 若上一把还没真正进入 SS_STARTED（只是投票/倒计时），则丢弃上一把并直接替换为新的开始
+      // - 若上一把已进入 SS_STARTED，则结算上一把再开始新的一把
       if (cur) {
-        cur.endLine = cur.endLine ?? lineNo - 1;
-        finalize();
+        if (cur.stateStartedLine == null) {
+          // 丢弃未开始的候选任务（避免 “开始标记、开始标记、结束标记” 把错误开始当真）
+          cur = null;
+        } else {
+          cur.endLine = cur.endLine ?? lineNo - 1;
+          finalize();
+        }
       }
+      const missionName =
+        (mStartName?.[1] ?? mStartVote?.[1] ?? "")?.trim() || undefined;
+      const voteNode = mStartVote ? line.match(reVoteNodeId) : null;
       cur = {
+        startKind: mStartVote ? "missionVote" : "missionName",
         startLine: lineNo,
         startTime: parseTime(line),
-        missionName: mStart[1]?.trim() || undefined,
+        missionName,
         needHostLines: 15, // 期望下一行是 host loading，最多向后 15 行补抓
         shieldDroneCount: 0,
         missionKind: "unknown",
@@ -801,6 +820,7 @@ export async function parseRecentValidEeLogFromFile(
         interCompletedRounds: 0,
         pendingDronesBeforeFirstRoundMarker: 0,
       };
+      if (voteNode?.[1]) cur.nodeId = voteNode[1];
       return;
     }
 
@@ -814,15 +834,21 @@ export async function parseRecentValidEeLogFromFile(
     }
     // 结束态可能打印多次：取最后一次更稳
     if (reStateEnding.test(line)) {
-      const t = parseTime(line);
-      if (t != null) cur.stateEndingTime = t;
-      cur.stateEndingLine = lineNo;
+      // 只有真正进入过 SS_STARTED 的任务才允许用 SS_ENDING 作为结束点（避免 hub 的 ending 误判）
+      if (cur.stateStartedLine != null) {
+        const t = parseTime(line);
+        if (t != null) cur.stateEndingTime = t;
+        cur.stateEndingLine = lineNo;
+        // 某些日志没有 EliteAlertMission at <NodeId>，用 SS_ENDING 作为结束点
+        cur.endLine = lineNo;
+        if (t != null) cur.endTime = t;
+      }
     }
 
     const afterEnding = cur.stateEndingLine != null && lineNo > cur.stateEndingLine;
 
-    const afterStarted =
-      cur.stateStartedLine == null ? true : lineNo >= cur.stateStartedLine;
+    // 关键：只有 SS_STARTED 之后才开始计入生成统计，避免“倒计时未进图”但开始标记已出现的误计数
+    const afterStarted = cur.stateStartedLine != null && lineNo >= cur.stateStartedLine;
 
     // 补抓 nodeId（尽量靠近开始处）
     if (!cur.nodeId && cur.needHostLines > 0) {

@@ -232,7 +232,7 @@ export default function Page() {
                 checked={buffs.blueBox}
                 onChange={(e) => setBuffs((s) => ({ ...s, blueBox: e.target.checked }))}
               />
-              <span>蓝盒子 ×2</span>
+              <span>资源掉落几率加成 ×2</span>
             </label>
             <label className="toggle">
               <input
@@ -248,7 +248,7 @@ export default function Page() {
                 checked={buffs.yellowBox}
                 onChange={(e) => setBuffs((s) => ({ ...s, yellowBox: e.target.checked }))}
               />
-              <span>黄盒子 ×2</span>
+              <span>资源数量加成 ×2</span>
             </label>
             <label className="toggle">
               <input
@@ -256,7 +256,7 @@ export default function Page() {
                 checked={buffs.blessing}
                 onChange={(e) => setBuffs((s) => ({ ...s, blessing: e.target.checked }))}
               />
-              <span>祝福 ×1.25</span>
+              <span>资源掉落几率祝福 ×1.25</span>
             </label>
           </div>
         </div>
