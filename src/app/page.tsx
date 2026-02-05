@@ -360,7 +360,7 @@ export default function Page() {
                       <div className="miniValue">{formatNumber(metrics.expectedPerHour, 1)}</div>
                     </div>
                     <div className="mini">
-                      <div className="miniLabel">评级（满状态 1h）</div>
+                      <div className="miniLabel">评级</div>
                       <div className="miniValue">{metrics.grade}</div>
                     </div>
                   </div>

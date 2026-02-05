@@ -676,7 +676,9 @@ export async function parseRecentValidEeLogFromFile(
     phaseKind?: "wave" | "round";
     phases: number[]; // index -> drones count (0-based)
     curPhaseIndex?: number; // 1-based
-    pendingDronesBeforeFirstPhase: number; // interception: drones before first round marker
+    // interception round markers count (end-of-round)
+    interCompletedRounds?: number;
+    pendingDronesBeforeFirstRoundMarker: number; // interception: drones before first marker -> round 1
     waveCount?: number;
     roundCount?: number;
   };
@@ -718,16 +720,20 @@ export async function parseRecentValidEeLogFromFile(
       run.phaseKind = "wave";
       if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
     } else if (run.missionKind === "interception") {
-      if (run.roundCount == null) run.roundCount = run.phases.length || undefined;
-      run.waveCount = run.roundCount;
       run.phaseKind = "round";
-      // 没有任何 round marker，但出现了无人机：把它归到第 1 轮
-      if (run.phases.length === 0 && run.pendingDronesBeforeFirstPhase > 0) {
-        run.roundCount = 1;
-        run.waveCount = 1;
-        run.curPhaseIndex = 1;
-        run.phases = [run.pendingDronesBeforeFirstPhase];
-        run.pendingDronesBeforeFirstPhase = 0;
+      // roundCount 优先用“轮次结束播报”的次数（更符合实际：最后一轮不会出现 0）
+      const completed = run.interCompletedRounds ?? 0;
+      if (completed > 0) {
+        run.roundCount = completed;
+      } else if (run.roundCount == null) {
+        // 没出现 round marker：兜底按已统计到的 phases 或 pending 判断
+        if (run.phases.length > 0) run.roundCount = run.phases.length;
+        else if (run.pendingDronesBeforeFirstRoundMarker > 0) run.roundCount = 1;
+      }
+      run.waveCount = run.roundCount;
+      // 修剪掉“播报后进入下一轮”的尾部空桶
+      if (run.roundCount != null && run.phases.length > run.roundCount) {
+        run.phases.length = run.roundCount;
       }
     }
 
@@ -792,7 +798,8 @@ export async function parseRecentValidEeLogFromFile(
         shieldDroneCount: 0,
         missionKind: "unknown",
         phases: [],
-        pendingDronesBeforeFirstPhase: 0,
+        interCompletedRounds: 0,
+        pendingDronesBeforeFirstRoundMarker: 0,
       };
       return;
     }
@@ -850,17 +857,19 @@ export async function parseRecentValidEeLogFromFile(
           while (cur.phases.length < w) cur.phases.push(0);
         }
       } else if (reInterceptionNewRound.test(line)) {
-        // 拦截：每次出现该播报视为进入新一轮（Round）
+        // 拦截：该播报更像“本轮结束”，作为轮次边界更稳定
         cur.missionKind = "interception";
         cur.phaseKind = "round";
-        const next = (cur.roundCount ?? 0) + 1;
-        cur.roundCount = next;
-        cur.curPhaseIndex = next;
-        while (cur.phases.length < next) cur.phases.push(0);
-        if (next === 1 && cur.pendingDronesBeforeFirstPhase > 0) {
-          cur.phases[0] = (cur.phases[0] ?? 0) + cur.pendingDronesBeforeFirstPhase;
-          cur.pendingDronesBeforeFirstPhase = 0;
+        cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
+        cur.roundCount = cur.interCompletedRounds;
+        // 第一次遇到播报：把此前累计的无人机归到第 1 轮
+        if (cur.interCompletedRounds === 1 && cur.pendingDronesBeforeFirstRoundMarker > 0) {
+          if (cur.phases.length < 1) cur.phases.push(0);
+          cur.phases[0] = (cur.phases[0] ?? 0) + cur.pendingDronesBeforeFirstRoundMarker;
+          cur.pendingDronesBeforeFirstRoundMarker = 0;
         }
+        // 播报之后进入下一轮（active round = completed + 1）
+        cur.curPhaseIndex = cur.interCompletedRounds + 1;
       }
     }
 
@@ -872,8 +881,8 @@ export async function parseRecentValidEeLogFromFile(
         while (cur.phases.length <= idx0) cur.phases.push(0);
         cur.phases[idx0] = (cur.phases[idx0] ?? 0) + 1;
       } else if (cur.missionKind !== "defense") {
-        // 拦截：如果还没遇到第一条“新轮次”播报，把无人机先暂存到第 1 轮
-        cur.pendingDronesBeforeFirstPhase++;
+        // 拦截：尚未遇到轮次边界播报 -> 先暂存（归到第 1 轮）
+        cur.pendingDronesBeforeFirstRoundMarker++;
       }
     }
 
