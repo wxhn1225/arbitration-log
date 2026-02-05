@@ -446,6 +446,7 @@ export type ParseLatestFromFileOptions = {
 export type ParseRecentValidFromFileOptions = ParseLatestFromFileOptions & {
   count?: number; // 最近有效几把
   minDurationSec?: number; // 小于该时长视为无效（默认 60s）
+  chunkBytes?: number; // 流式读取块大小
 };
 
 function parseRecentMissionsInText(text: string): ParseResult {
@@ -625,37 +626,175 @@ export async function parseLatestEeLogFromFile(
  */
 export async function parseRecentValidEeLogFromFile(
   file: File,
-  options?: ParseRecentValidFromFileOptions
+  options?: ParseRecentValidFromFileOptions,
+  onProgress?: (progress01: number) => void
 ): Promise<ParseResult> {
   const count = options?.count ?? 2;
   const minDurationSec = options?.minDurationSec ?? 60;
-  const initial = options?.initialTailBytes ?? 4 * 1024 * 1024; // 4MB
-  // 不做人为上限：必要时可扩到整文件（大日志也能解析）
-  const max = options?.maxTailBytes ?? file.size;
+  const chunkBytes = options?.chunkBytes ?? 4 * 1024 * 1024; // 4MB
 
-  let tail = Math.min(Math.max(256 * 1024, initial), Math.max(256 * 1024, max));
-  while (true) {
-    const text = await readTailText(file, tail);
-    const parsed = parseRecentMissionsInText(text);
-    const valid = parsed.missions.filter((m) => {
-      const totalSec = pickTotalSec(m);
-      return totalSec != null && totalSec >= minDurationSec;
+  // 流式逐块读取：避免 2GB+ 日志导致 OOM
+  const decoder = new TextDecoder("utf-8");
+  let carry = "";
+  let offset = 0;
+  let lineNo = 0;
+
+  type Run = {
+    startLine: number;
+    endLine?: number;
+    startTime?: number;
+    endTime?: number;
+    missionName?: string;
+    nodeId?: string;
+    // start 后抓 node 的窗口
+    needHostLines: number;
+
+    // metrics
+    shieldDroneCount: number;
+    lastSpawned?: number;
+    firstOnAgentTime?: number;
+    lastOnAgentTime?: number;
+    stateStartedTime?: number;
+    stateEndingTime?: number;
+  };
+
+  let cur: Run | null = null;
+  const valid: MissionResult[] = [];
+  const warnings: string[] = [];
+
+  const finalize = () => {
+    if (!cur) return;
+    const durationSec =
+      cur.startTime != null && cur.endTime != null ? cur.endTime - cur.startTime : undefined;
+    const onAgentSpanSec =
+      cur.firstOnAgentTime != null && cur.lastOnAgentTime != null
+        ? cur.lastOnAgentTime - cur.firstOnAgentTime
+        : undefined;
+    const stateDurationSec =
+      cur.stateStartedTime != null && cur.stateEndingTime != null
+        ? cur.stateEndingTime - cur.stateStartedTime
+        : undefined;
+
+    const totalSec = pickTotalSec({
+      stateDurationSec,
+      onAgentCreatedSpanSec: onAgentSpanSec,
+      durationSec,
     });
 
-    const picked = valid.slice(Math.max(0, valid.length - count));
+    const m: MissionResult = {
+      index: 0,
+      nodeId: cur.nodeId,
+      missionName: cur.missionName,
+      startKind: "missionName",
+      startLine: cur.startLine,
+      endLine: cur.endLine,
+      startTime: cur.startTime,
+      endTime: cur.endTime,
+      durationSec: durationSec != null && Number.isFinite(durationSec) ? durationSec : undefined,
+      stateStartedTime: cur.stateStartedTime,
+      stateEndingTime: cur.stateEndingTime,
+      stateDurationSec:
+        stateDurationSec != null && Number.isFinite(stateDurationSec) ? stateDurationSec : undefined,
+      spawnedAtEnd: cur.lastSpawned,
+      firstOnAgentCreatedTime: cur.firstOnAgentTime,
+      lastOnAgentCreatedTime: cur.lastOnAgentTime,
+      onAgentCreatedSpanSec:
+        onAgentSpanSec != null && Number.isFinite(onAgentSpanSec) ? onAgentSpanSec : undefined,
+      shieldDronePerMin: calcPerMin(cur.shieldDroneCount, totalSec),
+      shieldDroneCount: cur.shieldDroneCount,
+      status: cur.endLine != null ? "ok" : "incomplete",
+    };
 
-    const warnings = [...parsed.warnings];
-    if (picked.length < count && tail < max) {
-      tail = Math.min(max, tail * 2);
-      continue;
+    if (totalSec != null && totalSec >= minDurationSec) {
+      valid.push(m);
+      while (valid.length > count) valid.shift();
     }
-    if (picked.length < count) {
-      warnings.push(`有效记录不足：仅找到 ${picked.length} 把（过滤阈值 ${minDurationSec}s）。`);
+    cur = null;
+  };
+
+  const feedLine = (line: string) => {
+    lineNo++;
+
+    const mStart = line.match(reStartMissionName);
+    if (mStart) {
+      // 新开始出现：先结算上一把（边界到上一行）
+      if (cur) {
+        cur.endLine = cur.endLine ?? lineNo - 1;
+        finalize();
+      }
+      cur = {
+        startLine: lineNo,
+        startTime: parseTime(line),
+        missionName: mStart[1]?.trim() || undefined,
+        needHostLines: 15, // 期望下一行是 host loading，最多向后 15 行补抓
+        shieldDroneCount: 0,
+      };
+      return;
     }
 
-    // 重新编号 index（展示用）
-    const missions = picked.map((m, idx) => ({ ...m, index: idx + 1 }));
-    return { missions, warnings };
+    if (!cur) return;
+
+    // 补抓 nodeId（尽量靠近开始处）
+    if (!cur.nodeId && cur.needHostLines > 0) {
+      const h = line.match(reHostLoading);
+      if (h) cur.nodeId = h[1];
+      cur.needHostLines--;
+    }
+
+    // end marker（取最后一次）
+    if (cur.nodeId) {
+      const e = line.match(reEnd);
+      if (e && e[1] === cur.nodeId) {
+        cur.endLine = lineNo;
+        cur.endTime = parseTime(line);
+      }
+    }
+
+    if (reShieldDrone.test(line)) cur.shieldDroneCount++;
+
+    if (reAnyOnAgentCreated.test(line)) {
+      const t = parseTime(line);
+      if (t != null) {
+        if (cur.firstOnAgentTime == null) cur.firstOnAgentTime = t;
+        cur.lastOnAgentTime = t;
+      }
+      const sm = line.match(reSpawned);
+      if (sm) {
+        const n = Number(sm[1]);
+        if (Number.isFinite(n)) cur.lastSpawned = n;
+      }
+    }
+
+    if (cur.stateStartedTime == null && reStateStarted.test(line)) {
+      const t = parseTime(line);
+      if (t != null) cur.stateStartedTime = t;
+    }
+    if (reStateEnding.test(line)) {
+      const t = parseTime(line);
+      if (t != null) cur.stateEndingTime = t;
+    }
+  };
+
+  while (offset < file.size) {
+    const end = Math.min(file.size, offset + chunkBytes);
+    const buf = await file.slice(offset, end).arrayBuffer();
+    const text = decoder.decode(buf, { stream: true });
+    const combined = carry + text;
+    const parts = combined.split(/\r?\n/);
+    carry = parts.pop() ?? "";
+    for (const line of parts) feedLine(line);
+    offset = end;
+    if (onProgress) onProgress(file.size ? offset / file.size : 1);
   }
+
+  const tail = carry + decoder.decode();
+  if (tail.trim()) feedLine(tail);
+  finalize();
+
+  const missions = valid.map((m, idx) => ({ ...m, index: idx + 1 }));
+  if (missions.length < count) {
+    warnings.push(`有效记录不足：仅找到 ${missions.length} 把（过滤阈值 ${minDurationSec}s）。`);
+  }
+  return { missions, warnings };
 }
 

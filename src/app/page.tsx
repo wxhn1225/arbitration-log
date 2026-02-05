@@ -36,6 +36,7 @@ export default function Page() {
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nodeMap, setNodeMap] = useState<Record<string, NodeMeta> | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
   const missions = useMemo<MissionResult[]>(() => parse?.missions ?? [], [parse]);
 
@@ -89,11 +90,18 @@ export default function Page() {
   const handleFile = async (file: File) => {
     setError(null);
     setParse(null);
+    setProgress(0);
     try {
-      const res = await parseRecentValidEeLogFromFile(file, { count: 2, minDurationSec: 60 });
+      const res = await parseRecentValidEeLogFromFile(
+        file,
+        { count: 2, minDurationSec: 60, chunkBytes: 4 * 1024 * 1024 },
+        (p) => setProgress(p)
+      );
       setParse(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取或解析失败");
+    } finally {
+      setProgress(null);
     }
   };
 
@@ -121,6 +129,9 @@ export default function Page() {
         <div className="topbar">
           <div className="actions">
             <span className="hint">仅限主机的 ee.log</span>
+            {progress != null ? (
+              <span className="warnTag">{Math.round(progress * 100)}%</span>
+            ) : null}
             {error ? <span className="err">解析失败</span> : null}
             {missions.some((m) => m.status === "incomplete") ? (
               <span className="warnTag">incomplete</span>
