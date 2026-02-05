@@ -73,10 +73,10 @@ export default function Page() {
   const [nodeMap, setNodeMap] = useState<Record<string, NodeMeta> | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [buffs, setBuffs] = useState<BuffState>({
-    blueBox: false,
-    abundant: false,
-    yellowBox: false,
-    blessing: false,
+    blueBox: true,
+    abundant: true,
+    yellowBox: true,
+    blessing: true,
   });
   const mul = useMemo(() => buffMultiplier(buffs), [buffs]);
 
