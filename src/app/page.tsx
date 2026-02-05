@@ -82,11 +82,8 @@ export default function Page() {
       meta?.missionType,
       meta?.faction,
     ].filter(Boolean) as string[];
-    const left = parts.join(" · ");
-    const right = m.nodeId ? `(${m.nodeId})` : "";
-    if (!left && !right) return "";
-    if (left && right) return `${left} ${right}`;
-    return left || right;
+    // 不展示 (SolNode94) 这类括号信息，只展示可读文本
+    return parts.join(" · ");
   };
 
   const handleFile = async (file: File) => {
@@ -116,6 +113,11 @@ export default function Page() {
           if (f) void handleFile(f);
         }}
       >
+        <div className="helpLine">
+          <span>ee.log 路径：%LOCALAPPDATA%\\Warframe</span>
+          <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
+        </div>
+
         <div className="topbar">
           <div className="actions">
             <span className="hint">仅限主机的 ee.log</span>
@@ -150,11 +152,6 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="helpLine">
-          <span>ee.log 路径：%LOCALAPPDATA%\\Warframe</span>
-          <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
-        </div>
-
         <div className="runs">
           {missions.length === 0 ? (
             <div className="empty">暂无有效记录</div>
@@ -166,7 +163,7 @@ export default function Page() {
                   <div className="runHeader">
                     <div className="runTitle">最近有效第 {idx + 1} 把</div>
                     <div className="runSub">
-                      {nodeInfoLine(m) || (m.nodeId ?? "-")}
+                      {nodeInfoLine(m) || "-"}
                     </div>
                   </div>
                   <div className="metricsBig">
