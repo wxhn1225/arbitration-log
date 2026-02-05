@@ -598,7 +598,8 @@ export async function parseLatestEeLogFromFile(
   options?: ParseLatestFromFileOptions
 ): Promise<ParseResult> {
   const initial = options?.initialTailBytes ?? 4 * 1024 * 1024; // 4MB
-  const max = options?.maxTailBytes ?? 32 * 1024 * 1024; // 32MB
+  // 不做人为上限：必要时可扩到整文件（大日志也能解析）
+  const max = options?.maxTailBytes ?? file.size;
 
   // 逐步扩大尾部窗口，直到能稳定解析出一条任务（并尽量拿到节点）
   let tail = Math.min(Math.max(256 * 1024, initial), Math.max(256 * 1024, max));
@@ -629,7 +630,8 @@ export async function parseRecentValidEeLogFromFile(
   const count = options?.count ?? 2;
   const minDurationSec = options?.minDurationSec ?? 60;
   const initial = options?.initialTailBytes ?? 4 * 1024 * 1024; // 4MB
-  const max = options?.maxTailBytes ?? 48 * 1024 * 1024; // 48MB
+  // 不做人为上限：必要时可扩到整文件（大日志也能解析）
+  const max = options?.maxTailBytes ?? file.size;
 
   let tail = Math.min(Math.max(256 * 1024, initial), Math.max(256 * 1024, max));
   while (true) {
