@@ -44,7 +44,7 @@ const reStartMissionName =
 // 某些日志没有 Mission name 行，但会有投票/选任务行（仍含 “- 仲裁” 与 NodeId）
 // e.g. ThemedSquadOverlay.lua: ShowMissionVote Casta (谷神星) - 仲裁 - 等级 ... (SolNode149_EliteAlert) -1
 const reStartMissionVote =
-  /Script \[Info\]: ThemedSquadOverlay\.lua: ShowMissionVote\s+(.+?)\s*-\s*仲裁\b/;
+  /Script \[Info\]: ThemedSquadOverlay\.lua: ShowMissionVote\s+(.+?)\s*-\s*仲裁/;
 const reVoteNodeId = /\(([A-Za-z0-9_]+)_EliteAlert\)/;
 
 const reHostLoading =
