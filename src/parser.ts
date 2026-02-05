@@ -656,6 +656,8 @@ export async function parseRecentValidEeLogFromFile(
     lastOnAgentTime?: number;
     stateStartedTime?: number;
     stateEndingTime?: number;
+    stateStartedLine?: number;
+    stateEndingLine?: number;
   };
 
   let cur: Run | null = null;
@@ -734,6 +736,27 @@ export async function parseRecentValidEeLogFromFile(
 
     if (!cur) return;
 
+    // 先更新状态机时间（用于限定统计窗口）
+    if (cur.stateStartedTime == null && reStateStarted.test(line)) {
+      const t = parseTime(line);
+      if (t != null) cur.stateStartedTime = t;
+      cur.stateStartedLine = lineNo;
+    }
+    // 结束态可能打印多次：取最后一次更稳
+    if (reStateEnding.test(line)) {
+      const t = parseTime(line);
+      if (t != null) cur.stateEndingTime = t;
+      cur.stateEndingLine = lineNo;
+    }
+
+    // 若已进入 SS_ENDING，则后续行不再计入“生成统计”，避免返回飞船/中继站的 OnAgentCreated 覆盖 Spawned
+    if (cur.stateEndingLine != null && lineNo > cur.stateEndingLine) {
+      return;
+    }
+
+    const afterStarted =
+      cur.stateStartedLine == null ? true : lineNo >= cur.stateStartedLine;
+
     // 补抓 nodeId（尽量靠近开始处）
     if (!cur.nodeId && cur.needHostLines > 0) {
       const h = line.match(reHostLoading);
@@ -750,9 +773,9 @@ export async function parseRecentValidEeLogFromFile(
       }
     }
 
-    if (reShieldDrone.test(line)) cur.shieldDroneCount++;
+    if (afterStarted && reShieldDrone.test(line)) cur.shieldDroneCount++;
 
-    if (reAnyOnAgentCreated.test(line)) {
+    if (afterStarted && reAnyOnAgentCreated.test(line)) {
       const t = parseTime(line);
       if (t != null) {
         if (cur.firstOnAgentTime == null) cur.firstOnAgentTime = t;
@@ -763,15 +786,6 @@ export async function parseRecentValidEeLogFromFile(
         const n = Number(sm[1]);
         if (Number.isFinite(n)) cur.lastSpawned = n;
       }
-    }
-
-    if (cur.stateStartedTime == null && reStateStarted.test(line)) {
-      const t = parseTime(line);
-      if (t != null) cur.stateStartedTime = t;
-    }
-    if (reStateEnding.test(line)) {
-      const t = parseTime(line);
-      if (t != null) cur.stateEndingTime = t;
     }
   };
 

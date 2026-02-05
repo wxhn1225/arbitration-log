@@ -15,6 +15,8 @@ const dictPath = path.join(repoRoot, "warframe-public-export-plus", "dict.zh.jso
 
 const outDir = path.join(repoRoot, "public");
 const outPath = path.join(outDir, "node-map.zh.json");
+const outGoDir = path.join(repoRoot, "internal", "nodemap");
+const outGoPath = path.join(outGoDir, "node-map.zh.json");
 
 function safeString(v) {
   return typeof v === "string" ? v : undefined;
@@ -55,6 +57,9 @@ for (const [nodeId, info] of Object.entries(regions)) {
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outPath, JSON.stringify(out), "utf8");
+mkdirSync(outGoDir, { recursive: true });
+writeFileSync(outGoPath, JSON.stringify(out), "utf8");
 
 console.log(`Generated ${path.relative(repoRoot, outPath)} (${Object.keys(out).length} nodes)`);
+console.log(`Generated ${path.relative(repoRoot, outGoPath)} (${Object.keys(out).length} nodes)`);
 
