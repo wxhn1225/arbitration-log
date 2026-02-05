@@ -554,3 +554,190 @@ code {
   text-shadow: 0 0 22px rgba(255, 255, 255, 0.08);
 }
 
+/* --- status bar / expected essence / details --- */
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.10);
+}
+
+.statusLeft {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.statusTitle {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.statusHint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.statusToggles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+  user-select: none;
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 700px) {
+  .statusBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .statusToggles {
+    justify-content: flex-start;
+  }
+}
+
+.metricsSmall {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .metricsSmall {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.mini {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.08);
+  padding: 10px 12px;
+}
+
+.miniLabel {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.64);
+  letter-spacing: 0.2px;
+}
+
+.miniValue {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.90);
+}
+
+.detail {
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.06);
+  padding: 10px 12px;
+}
+
+.detail > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.80);
+  list-style: none;
+  outline: none;
+}
+.detail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.detailInner {
+  margin-top: 10px;
+  display: grid;
+  gap: 12px;
+}
+
+.detailMeta {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.kv .k {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.kv .v {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.86);
+  font-variant-numeric: tabular-nums;
+}
+
+.phaseTable {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.phaseRow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 0.8fr;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.phaseRow:first-child {
+  border-top: none;
+}
+
+.phaseHead {
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 800;
+}
+
+.phaseRow .c2,
+.phaseRow .c3 {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.detailEmpty {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.62);
+}
+

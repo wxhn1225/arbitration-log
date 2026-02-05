@@ -30,6 +30,41 @@ function formatPerMin(v?: number): string {
   return v.toFixed(2);
 }
 
+function formatNumber(v?: number, digits = 3): string {
+  if (v == null) return "-";
+  if (!Number.isFinite(v)) return "-";
+  return v.toFixed(digits);
+}
+
+type BuffState = {
+  blueBox: boolean; // ×2
+  abundant: boolean; // ×1.18
+  yellowBox: boolean; // ×2
+  blessing: boolean; // ×1.25
+};
+
+const BASE_DROP = 0.06;
+const EXTRA_PER_ROUND_PROB = 0.07;
+const EXTRA_PER_ROUND_AMOUNT = 3;
+
+function buffMultiplier(b: BuffState): number {
+  let m = 1;
+  if (b.blueBox) m *= 2;
+  if (b.abundant) m *= 1.18;
+  if (b.yellowBox) m *= 2;
+  if (b.blessing) m *= 1.25;
+  return m;
+}
+
+function gradeFor(perHour?: number): string {
+  if (perHour == null || !Number.isFinite(perHour)) return "-";
+  if (perHour >= 800) return "S";
+  if (perHour >= 700) return "A+";
+  if (perHour >= 600) return "A";
+  if (perHour >= 500) return "A-";
+  return "F";
+}
+
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -37,6 +72,13 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [nodeMap, setNodeMap] = useState<Record<string, NodeMeta> | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [buffs, setBuffs] = useState<BuffState>({
+    blueBox: false,
+    abundant: false,
+    yellowBox: false,
+    blessing: false,
+  });
+  const mul = useMemo(() => buffMultiplier(buffs), [buffs]);
 
   const missions = useMemo<MissionResult[]>(() => parse?.missions ?? [], [parse]);
 
@@ -72,7 +114,64 @@ export default function Page() {
       drones != null && totalSec != null && totalSec > 0
         ? drones / (totalSec / 60)
         : undefined;
-    return { enemySpawned, drones, totalSec, dronesPerMin };
+
+    const waveCount = m?.waveCount;
+    const roundCount = m?.roundCount;
+
+    const expectedFromDrones =
+      drones != null ? drones * BASE_DROP * mul : undefined;
+    const expectedFromRounds =
+      roundCount != null
+        ? roundCount * (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT)
+        : undefined;
+    const expectedTotal =
+      expectedFromDrones != null && expectedFromRounds != null
+        ? expectedFromDrones + expectedFromRounds
+        : expectedFromDrones != null
+          ? expectedFromDrones
+          : expectedFromRounds != null
+            ? expectedFromRounds
+            : undefined;
+    const expectedPerHour =
+      expectedTotal != null && totalSec != null && totalSec > 0
+        ? (expectedTotal * 3600) / totalSec
+        : undefined;
+
+    // 满状态评级（不受勾选影响）
+    const fullMul = 2 * 1.18 * 2 * 1.25;
+    const fullExpectedFromDrones =
+      drones != null ? drones * BASE_DROP * fullMul : undefined;
+    const fullExpectedFromRounds =
+      roundCount != null
+        ? roundCount * (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT)
+        : undefined;
+    const fullExpectedTotal =
+      fullExpectedFromDrones != null && fullExpectedFromRounds != null
+        ? fullExpectedFromDrones + fullExpectedFromRounds
+        : fullExpectedFromDrones != null
+          ? fullExpectedFromDrones
+          : fullExpectedFromRounds != null
+            ? fullExpectedFromRounds
+            : undefined;
+    const fullExpectedPerHour =
+      fullExpectedTotal != null && totalSec != null && totalSec > 0
+        ? (fullExpectedTotal * 3600) / totalSec
+        : undefined;
+
+    return {
+      enemySpawned,
+      drones,
+      totalSec,
+      dronesPerMin,
+      waveCount,
+      roundCount,
+      expectedFromDrones,
+      expectedFromRounds,
+      expectedTotal,
+      expectedPerHour,
+      fullExpectedPerHour,
+      grade: gradeFor(fullExpectedPerHour),
+    };
   };
 
   const nodeInfoLine = (m: MissionResult) => {
@@ -121,6 +220,47 @@ export default function Page() {
           if (f) void handleFile(f);
         }}
       >
+        <div className="statusBar">
+          <div className="statusLeft">
+            <span className="statusTitle">状态</span>
+            <span className="statusHint">初始掉率：{Math.round(BASE_DROP * 100)}%</span>
+          </div>
+          <div className="statusToggles">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={buffs.blueBox}
+                onChange={(e) => setBuffs((s) => ({ ...s, blueBox: e.target.checked }))}
+              />
+              <span>蓝盒子 ×2</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={buffs.abundant}
+                onChange={(e) => setBuffs((s) => ({ ...s, abundant: e.target.checked }))}
+              />
+              <span>富足巡回者 ×1.18</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={buffs.yellowBox}
+                onChange={(e) => setBuffs((s) => ({ ...s, yellowBox: e.target.checked }))}
+              />
+              <span>黄盒子 ×2</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={buffs.blessing}
+                onChange={(e) => setBuffs((s) => ({ ...s, blessing: e.target.checked }))}
+              />
+              <span>祝福 ×1.25</span>
+            </label>
+          </div>
+        </div>
+
         <div className="helpLine">
           <span>ee.log 路径：%LOCALAPPDATA%\\Warframe</span>
           <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
@@ -169,6 +309,12 @@ export default function Page() {
           ) : (
             missions.map((m, idx) => {
               const metrics = metricsFor(m);
+              const phaseLabel =
+                m.missionKind === "defense"
+                  ? "波次"
+                  : m.missionKind === "interception"
+                    ? "轮次"
+                    : "阶段";
               return (
                 <div key={idx} className="runBlock">
                   <div className="runHeader">
@@ -195,6 +341,93 @@ export default function Page() {
                       <div className="metricValue">{formatDuration(metrics.totalSec)}</div>
                     </div>
                   </div>
+
+                  <div className="metricsSmall">
+                    <div className="mini">
+                      <div className="miniLabel">波数</div>
+                      <div className="miniValue">{metrics.waveCount ?? "-"}</div>
+                    </div>
+                    <div className="mini">
+                      <div className="miniLabel">轮次</div>
+                      <div className="miniValue">{metrics.roundCount ?? "-"}</div>
+                    </div>
+                    <div className="mini">
+                      <div className="miniLabel">期望生息</div>
+                      <div className="miniValue">{formatNumber(metrics.expectedTotal, 3)}</div>
+                    </div>
+                    <div className="mini">
+                      <div className="miniLabel">1h 期望</div>
+                      <div className="miniValue">{formatNumber(metrics.expectedPerHour, 1)}</div>
+                    </div>
+                    <div className="mini">
+                      <div className="miniLabel">评级（满状态 1h）</div>
+                      <div className="miniValue">{metrics.grade}</div>
+                    </div>
+                  </div>
+
+                  <details className="detail">
+                    <summary>查看详细</summary>
+                    <div className="detailInner">
+                      <div className="detailMeta">
+                        <div className="kv">
+                          <div className="k">{phaseLabel}</div>
+                          <div className="v">
+                            {m.missionKind === "defense"
+                              ? `${metrics.waveCount ?? "-"} 波 / ${metrics.roundCount ?? "-"} 轮（每 3 波 1 轮）`
+                              : m.missionKind === "interception"
+                                ? `${metrics.roundCount ?? "-"} 轮（每轮 = 1 轮次）`
+                                : "-"}
+                          </div>
+                        </div>
+                        <div className="kv">
+                          <div className="k">轮次奖励期望</div>
+                          <div className="v">
+                            {metrics.roundCount != null
+                              ? `${formatNumber(
+                                  metrics.roundCount *
+                                    (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT),
+                                  3
+                                )}（保底 ${metrics.roundCount} + 额外期望 ${formatNumber(
+                                  metrics.roundCount *
+                                    (EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT),
+                                  3
+                                )}）`
+                              : "-"}
+                          </div>
+                        </div>
+                        <div className="kv">
+                          <div className="k">无人机掉落倍率</div>
+                          <div className="v">× {formatNumber(mul, 2)}</div>
+                        </div>
+                      </div>
+
+                      {Array.isArray(m.phases) && m.phases.length ? (
+                        <div className="phaseTable">
+                          <div className="phaseRow phaseHead">
+                            <div className="c1">{phaseLabel}</div>
+                            <div className="c2">无人机生成</div>
+                            <div className="c3">无人机期望生息</div>
+                          </div>
+                          {m.phases.map((p) => {
+                            const expected = p.shieldDroneCount * BASE_DROP * mul;
+                            const label =
+                              p.kind === "wave"
+                                ? `第 ${p.index} 波（第 ${Math.ceil(p.index / 3)} 轮）`
+                                : `第 ${p.index} 轮`;
+                            return (
+                              <div key={`${p.kind}-${p.index}`} className="phaseRow">
+                                <div className="c1">{label}</div>
+                                <div className="c2">{p.shieldDroneCount}</div>
+                                <div className="c3">{formatNumber(expected, 3)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="detailEmpty">该把日志段内未识别到 {phaseLabel} 标记</div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               );
             })

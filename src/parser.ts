@@ -4,6 +4,7 @@ export type MissionResult = {
   index: number;
   nodeId?: string; // e.g. SolNode64, CrewBattleNode523, ...
   missionName?: string; // e.g. 兰麦地亚 (海王星)
+  missionKind?: "defense" | "interception" | "unknown";
   startKind: MissionStartKind;
   startLine: number; // 1-based
   endLine?: number; // 1-based
@@ -19,6 +20,13 @@ export type MissionResult = {
   onAgentCreatedSpanSec?: number; // last - first
   shieldDronePerMin?: number;
   shieldDroneCount: number; // OnAgentCreated /Npc/CorpusEliteShieldDroneAgent*
+  waveCount?: number; // defense only
+  roundCount?: number; // defense/interception
+  phases?: Array<{
+    kind: "wave" | "round";
+    index: number; // 1-based
+    shieldDroneCount: number;
+  }>;
   status: "ok" | "incomplete";
   note?: string;
 };
@@ -48,6 +56,10 @@ const reAnyOnAgentCreated = /AI \[Info\]: OnAgentCreated\b/;
 const reSpawned = /\bSpawned\s+(\d+)\b/;
 const reShieldDrone =
   /AI \[Info\]: OnAgentCreated \/Npc\/CorpusEliteShieldDroneAgent\d*\b/;
+
+const reDefenseWave = /Script \[Info\]: WaveDefend\.lua: Defense wave:\s*(\d+)\b/;
+const reInterceptionNewRound =
+  /Script \[Info\]: HudRedux\.lua: Queuing new transmission: InterNewRoundLotusTransmission\b/;
 
 function parseTime(line: string): number | undefined {
   const m = line.match(reTimePrefix);
@@ -658,6 +670,15 @@ export async function parseRecentValidEeLogFromFile(
     stateEndingTime?: number;
     stateStartedLine?: number;
     stateEndingLine?: number;
+
+    // phases (defense waves or interception rounds)
+    missionKind?: "defense" | "interception" | "unknown";
+    phaseKind?: "wave" | "round";
+    phases: number[]; // index -> drones count (0-based)
+    curPhaseIndex?: number; // 1-based
+    pendingDronesBeforeFirstPhase: number; // interception: drones before first round marker
+    waveCount?: number;
+    roundCount?: number;
   };
 
   let cur: Run | null = null;
@@ -666,15 +687,16 @@ export async function parseRecentValidEeLogFromFile(
 
   const finalize = () => {
     if (!cur) return;
+    const run = cur;
     const durationSec =
-      cur.startTime != null && cur.endTime != null ? cur.endTime - cur.startTime : undefined;
+      run.startTime != null && run.endTime != null ? run.endTime - run.startTime : undefined;
     const onAgentSpanSec =
-      cur.firstOnAgentTime != null && cur.lastOnAgentTime != null
-        ? cur.lastOnAgentTime - cur.firstOnAgentTime
+      run.firstOnAgentTime != null && run.lastOnAgentTime != null
+        ? run.lastOnAgentTime - run.firstOnAgentTime
         : undefined;
     const stateDurationSec =
-      cur.stateStartedTime != null && cur.stateEndingTime != null
-        ? cur.stateEndingTime - cur.stateStartedTime
+      run.stateStartedTime != null && run.stateEndingTime != null
+        ? run.stateEndingTime - run.stateStartedTime
         : undefined;
 
     const totalSec = pickTotalSec({
@@ -683,28 +705,66 @@ export async function parseRecentValidEeLogFromFile(
       durationSec,
     });
 
+    // phases: 补全防御/拦截的波次/轮次统计
+    if (run.missionKind === "defense") {
+      const waveCount =
+        run.waveCount != null
+          ? run.waveCount
+          : run.phases.length
+            ? run.phases.length
+            : undefined;
+      run.waveCount = waveCount;
+      run.roundCount = waveCount != null ? Math.ceil(waveCount / 3) : run.roundCount;
+      run.phaseKind = "wave";
+      if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
+    } else if (run.missionKind === "interception") {
+      if (run.roundCount == null) run.roundCount = run.phases.length || undefined;
+      run.waveCount = run.roundCount;
+      run.phaseKind = "round";
+      // 没有任何 round marker，但出现了无人机：把它归到第 1 轮
+      if (run.phases.length === 0 && run.pendingDronesBeforeFirstPhase > 0) {
+        run.roundCount = 1;
+        run.waveCount = 1;
+        run.curPhaseIndex = 1;
+        run.phases = [run.pendingDronesBeforeFirstPhase];
+        run.pendingDronesBeforeFirstPhase = 0;
+      }
+    }
+
     const m: MissionResult = {
       index: 0,
-      nodeId: cur.nodeId,
-      missionName: cur.missionName,
+      nodeId: run.nodeId,
+      missionName: run.missionName,
+      missionKind: run.missionKind ?? "unknown",
       startKind: "missionName",
-      startLine: cur.startLine,
-      endLine: cur.endLine,
-      startTime: cur.startTime,
-      endTime: cur.endTime,
+      startLine: run.startLine,
+      endLine: run.endLine,
+      startTime: run.startTime,
+      endTime: run.endTime,
       durationSec: durationSec != null && Number.isFinite(durationSec) ? durationSec : undefined,
-      stateStartedTime: cur.stateStartedTime,
-      stateEndingTime: cur.stateEndingTime,
+      stateStartedTime: run.stateStartedTime,
+      stateEndingTime: run.stateEndingTime,
       stateDurationSec:
         stateDurationSec != null && Number.isFinite(stateDurationSec) ? stateDurationSec : undefined,
-      spawnedAtEnd: cur.lastSpawned,
-      firstOnAgentCreatedTime: cur.firstOnAgentTime,
-      lastOnAgentCreatedTime: cur.lastOnAgentTime,
+      spawnedAtEnd: run.lastSpawned,
+      firstOnAgentCreatedTime: run.firstOnAgentTime,
+      lastOnAgentCreatedTime: run.lastOnAgentTime,
       onAgentCreatedSpanSec:
         onAgentSpanSec != null && Number.isFinite(onAgentSpanSec) ? onAgentSpanSec : undefined,
-      shieldDronePerMin: calcPerMin(cur.shieldDroneCount, totalSec),
-      shieldDroneCount: cur.shieldDroneCount,
-      status: cur.endLine != null ? "ok" : "incomplete",
+      shieldDronePerMin: calcPerMin(run.shieldDroneCount, totalSec),
+      shieldDroneCount: run.shieldDroneCount,
+      waveCount: run.waveCount,
+      roundCount: run.roundCount,
+      phases:
+        run.phaseKind && run.phases.length
+          ? run.phases
+              .map((n, i) => ({
+                kind: run.phaseKind!,
+                index: i + 1,
+                shieldDroneCount: n,
+              }))
+          : undefined,
+      status: run.endLine != null ? "ok" : "incomplete",
     };
 
     if (totalSec != null && totalSec >= minDurationSec) {
@@ -730,6 +790,9 @@ export async function parseRecentValidEeLogFromFile(
         missionName: mStart[1]?.trim() || undefined,
         needHostLines: 15, // 期望下一行是 host loading，最多向后 15 行补抓
         shieldDroneCount: 0,
+        missionKind: "unknown",
+        phases: [],
+        pendingDronesBeforeFirstPhase: 0,
       };
       return;
     }
@@ -749,10 +812,7 @@ export async function parseRecentValidEeLogFromFile(
       cur.stateEndingLine = lineNo;
     }
 
-    // 若已进入 SS_ENDING，则后续行不再计入“生成统计”，避免返回飞船/中继站的 OnAgentCreated 覆盖 Spawned
-    if (cur.stateEndingLine != null && lineNo > cur.stateEndingLine) {
-      return;
-    }
+    const afterEnding = cur.stateEndingLine != null && lineNo > cur.stateEndingLine;
 
     const afterStarted =
       cur.stateStartedLine == null ? true : lineNo >= cur.stateStartedLine;
@@ -773,7 +833,49 @@ export async function parseRecentValidEeLogFromFile(
       }
     }
 
-    if (afterStarted && reShieldDrone.test(line)) cur.shieldDroneCount++;
+    // 若已进入 SS_ENDING：仍允许捕捉 end marker，但不再计入波次/轮次/生成统计
+    if (afterEnding) return;
+
+    // 识别“防御波次 / 拦截新轮次”标记（只在任务进行中）
+    if (afterStarted) {
+      const mw = line.match(reDefenseWave);
+      if (mw) {
+        const w = Number(mw[1]);
+        if (Number.isFinite(w) && w > 0) {
+          cur.missionKind = "defense";
+          cur.phaseKind = "wave";
+          cur.curPhaseIndex = w;
+          cur.waveCount = Math.max(cur.waveCount ?? 0, w);
+          // 确保数组长度 >= w
+          while (cur.phases.length < w) cur.phases.push(0);
+        }
+      } else if (reInterceptionNewRound.test(line)) {
+        // 拦截：每次出现该播报视为进入新一轮（Round）
+        cur.missionKind = "interception";
+        cur.phaseKind = "round";
+        const next = (cur.roundCount ?? 0) + 1;
+        cur.roundCount = next;
+        cur.curPhaseIndex = next;
+        while (cur.phases.length < next) cur.phases.push(0);
+        if (next === 1 && cur.pendingDronesBeforeFirstPhase > 0) {
+          cur.phases[0] = (cur.phases[0] ?? 0) + cur.pendingDronesBeforeFirstPhase;
+          cur.pendingDronesBeforeFirstPhase = 0;
+        }
+      }
+    }
+
+    if (afterStarted && reShieldDrone.test(line)) {
+      cur.shieldDroneCount++;
+      // 分波/轮统计
+      if (cur.phaseKind && cur.curPhaseIndex != null && cur.curPhaseIndex > 0) {
+        const idx0 = cur.curPhaseIndex - 1;
+        while (cur.phases.length <= idx0) cur.phases.push(0);
+        cur.phases[idx0] = (cur.phases[idx0] ?? 0) + 1;
+      } else if (cur.missionKind !== "defense") {
+        // 拦截：如果还没遇到第一条“新轮次”播报，把无人机先暂存到第 1 轮
+        cur.pendingDronesBeforeFirstPhase++;
+      }
+    }
 
     if (afterStarted && reAnyOnAgentCreated.test(line)) {
       const t = parseTime(line);
