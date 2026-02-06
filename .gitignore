@@ -25,6 +25,7 @@ Thumbs.db
 *.log
 note.md
 logic.md
+todo.md
 
 ## Wails build artifacts
 go-analyzer-wails/build/bin/
