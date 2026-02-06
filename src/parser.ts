@@ -38,7 +38,8 @@ export type ParseResult = {
   warnings: string[];
 };
 
-const reTimePrefix = /^(\d+(?:\.\d+)?)\s+/;
+// 有些日志行会在时间戳前带 "!"（例如 "!4631.303"），需要兼容
+const reTimePrefix = /^!?(\d+(?:\.\d+)?)\s+/;
 
 const reStartMissionName =
   /Script \[Info\]: ThemedSquadOverlay\.lua: Mission name:\s*(.+?)\s*-\s*仲裁/;
