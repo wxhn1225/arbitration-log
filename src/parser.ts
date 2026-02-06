@@ -14,6 +14,8 @@ export type MissionResult = {
   stateStartedTime?: number; // SS_STARTED timestamp
   stateEndingTime?: number; // SS_ENDING timestamp
   stateDurationSec?: number; // stateEndingTime - stateStartedTime
+  eomTime?: number; // EndOfMatch/Extraction (mission complete UI) timestamp
+  eomDurationSec?: number; // eomTime - stateStartedTime
   spawnedAtEnd?: number; // Spawned N from last OnAgentCreated in segment
   firstOnAgentCreatedTime?: number;
   lastOnAgentCreatedTime?: number;
@@ -58,6 +60,10 @@ const reStateStarted =
 const reStateEnding =
   /GameRulesImpl - changing state from SS_STARTED to SS_ENDING/;
 
+// 任务结算 UI 出现的时间（通常更接近玩家看到的“结算用时”）
+const reEomInit = /Script \[Info\]: EndOfMatch\.lua: Initialize\b/;
+const reAllExtracting = /Script \[Info\]: ExtractionTimer\.lua: EOM: All players extracting\b/;
+
 const reAnyOnAgentCreated = /AI \[Info\]: OnAgentCreated\b/;
 const reSpawned = /\bSpawned\s+(\d+)\b/;
 const reShieldDrone =
@@ -74,7 +80,11 @@ function parseTime(line: string): number | undefined {
   return Number.isFinite(v) ? v : undefined;
 }
 
-function pickTotalSec(m: Pick<MissionResult, "stateDurationSec" | "onAgentCreatedSpanSec" | "durationSec">) {
+function pickTotalSec(
+  m: Pick<MissionResult, "eomDurationSec" | "stateDurationSec" | "onAgentCreatedSpanSec" | "durationSec">
+) {
+  const z = m.eomDurationSec;
+  if (z != null && Number.isFinite(z) && z > 0) return z;
   const a = m.stateDurationSec;
   if (a != null && Number.isFinite(a) && a > 0) return a;
   const b = m.onAgentCreatedSpanSec;
@@ -677,6 +687,8 @@ export async function parseRecentValidEeLogFromFile(
     stateEndingTime?: number;
     stateStartedLine?: number;
     stateEndingLine?: number;
+    eomTime?: number;
+    eomLine?: number;
 
     // phases (defense waves or interception rounds)
     missionKind?: "defense" | "interception" | "unknown";
@@ -707,8 +719,11 @@ export async function parseRecentValidEeLogFromFile(
       run.stateStartedTime != null && run.stateEndingTime != null
         ? run.stateEndingTime - run.stateStartedTime
         : undefined;
+    const eomDurationSec =
+      run.stateStartedTime != null && run.eomTime != null ? run.eomTime - run.stateStartedTime : undefined;
 
     const totalSec = pickTotalSec({
+      eomDurationSec: eomDurationSec != null && Number.isFinite(eomDurationSec) ? eomDurationSec : undefined,
       stateDurationSec,
       onAgentCreatedSpanSec: onAgentSpanSec,
       durationSec,
@@ -759,6 +774,9 @@ export async function parseRecentValidEeLogFromFile(
       stateEndingTime: run.stateEndingTime,
       stateDurationSec:
         stateDurationSec != null && Number.isFinite(stateDurationSec) ? stateDurationSec : undefined,
+      eomTime: run.eomTime,
+      eomDurationSec:
+        eomDurationSec != null && Number.isFinite(eomDurationSec) ? eomDurationSec : undefined,
       spawnedAtEnd: run.lastSpawned,
       firstOnAgentCreatedTime: run.firstOnAgentTime,
       lastOnAgentCreatedTime: run.lastOnAgentTime,
@@ -868,6 +886,15 @@ export async function parseRecentValidEeLogFromFile(
 
     // 若已进入 SS_ENDING：仍允许捕捉 end marker，但不再计入波次/轮次/生成统计
     if (afterEnding) return;
+
+    // 结算 UI（更贴近玩家看到的“结算时间”）：记录 SS_STARTED 之后、SS_ENDING 之前出现的最后一次
+    if (afterStarted && (reAllExtracting.test(line) || reEomInit.test(line))) {
+      const t = parseTime(line);
+      if (t != null) {
+        cur.eomTime = t;
+        cur.eomLine = lineNo;
+      }
+    }
 
     // 识别“防御波次 / 拦截新轮次”标记（只在任务进行中）
     if (afterStarted) {

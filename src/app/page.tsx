@@ -103,7 +103,9 @@ export default function Page() {
     const enemySpawned = m?.spawnedAtEnd ?? undefined;
     const drones = m?.shieldDroneCount ?? undefined;
     const totalSec =
-      m?.stateDurationSec != null && m.stateDurationSec > 0
+      m?.eomDurationSec != null && m.eomDurationSec > 0
+        ? m.eomDurationSec
+        : m?.stateDurationSec != null && m.stateDurationSec > 0
         ? m.stateDurationSec
         : m?.onAgentCreatedSpanSec != null && m.onAgentCreatedSpanSec > 0
           ? m.onAgentCreatedSpanSec
