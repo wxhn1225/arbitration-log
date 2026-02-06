@@ -21,7 +21,7 @@ function formatDuration(v?: number): string {
   if (m < 60) return `${m}m ${rs}s`;
   const h = Math.floor(m / 60);
   const rm = m - h * 60;
-  return `${h}h ${rm}m`;
+  return `${h}h ${rm}m ${rs}s`;
 }
 
 function formatPerMin(v?: number): string {
