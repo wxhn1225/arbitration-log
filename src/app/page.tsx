@@ -355,7 +355,9 @@ export default function Page() {
               return (
                 <div key={idx} className="runBlock">
                   <div className="runHeader">
-                    <div className="runTitle">最近有效第 {idx + 1} 把</div>
+                    <div className="runTitle" aria-label={`最近有效第 ${idx + 1} 把`}>
+                      <span className="runIndex">{String(idx + 1).padStart(2, "0")}</span>
+                    </div>
                     <div className="runSub">{nodeInfoLine(m) || "-"}</div>
                   </div>
                   <div className="metricsBig">

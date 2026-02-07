@@ -423,16 +423,39 @@ code {
 
 .runHeader {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 
 .runTitle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.runIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  min-width: 56px;
+  padding: 0 14px;
+  border-radius: 999px;
   font-size: 16px;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.86);
+  font-weight: 950;
+  letter-spacing: 0.6px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.10),
+      rgba(255, 255, 255, 0.06)
+    ),
+    radial-gradient(120% 180% at 10% 0%, rgba(125, 211, 252, 0.22), transparent 55%),
+    radial-gradient(120% 180% at 90% 0%, rgba(167, 139, 250, 0.18), transparent 55%);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
 .runSub {
