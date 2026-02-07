@@ -73,6 +73,9 @@ const reShieldDrone =
 const reDefenseWave = /Script \[Info\]: WaveDefend\.lua: Defense wave:\s*(\d+)\b/;
 const reInterceptionNewRound =
   /Script \[Info\]: HudRedux\.lua: Queuing new transmission: InterNewRoundLotusTransmission\b/;
+// 某些拦截日志没有 InterNewRoundLotusTransmission，但每轮结算会走 DefenseReward
+const reDefenseRewardTransitionOut =
+  /Script \[Info\]: DefenseReward\.lua: DefenseReward::TransitionOut\b/;
 
 function parseTime(line: string): number | undefined {
   const m = line.match(reTimePrefix);
@@ -698,6 +701,7 @@ export async function parseRecentValidEeLogFromFile(
     curPhaseIndex?: number; // 1-based
     // interception round markers count (end-of-round)
     interCompletedRounds?: number;
+    interHasTransmissionMarker?: boolean; // InterNewRoundLotusTransmission 是否出现过（出现则不再用 TransitionOut 计数）
     pendingDronesBeforeFirstRoundMarker: number; // interception: drones before first marker -> round 1
     waveCount?: number;
     roundCount?: number;
@@ -837,6 +841,7 @@ export async function parseRecentValidEeLogFromFile(
         missionKind: "unknown",
         phases: [],
         interCompletedRounds: 0,
+        interHasTransmissionMarker: false,
         pendingDronesBeforeFirstRoundMarker: 0,
       };
       if (voteNode?.[1]) cur.nodeId = voteNode[1];
@@ -910,10 +915,15 @@ export async function parseRecentValidEeLogFromFile(
           // 确保数组长度 >= w
           while (cur.phases.length < w) cur.phases.push(0);
         }
-      } else if (reInterceptionNewRound.test(line)) {
-        // 拦截：该播报更像“本轮结束”，作为轮次边界更稳定
+      }
+
+      // 拦截轮次边界：
+      // 1) 优先使用 InterNewRoundLotusTransmission（若存在）
+      // 2) 若不存在，使用 DefenseReward::TransitionOut（Ose 这类日志更稳定）
+      if (reInterceptionNewRound.test(line)) {
         cur.missionKind = "interception";
         cur.phaseKind = "round";
+        cur.interHasTransmissionMarker = true;
         cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
         cur.roundCount = cur.interCompletedRounds;
         // 第一次遇到播报：把此前累计的无人机归到第 1 轮
@@ -924,6 +934,26 @@ export async function parseRecentValidEeLogFromFile(
         }
         // 播报之后进入下一轮（active round = completed + 1）
         cur.curPhaseIndex = cur.interCompletedRounds + 1;
+      } else if (reDefenseRewardTransitionOut.test(line)) {
+        // 注意：Defense 和 Interception 都可能出现该行
+        // - 若 node-map 已判定为 defense，则不应把它当作拦截轮次边界
+        // - 若 node-map 判定为 interception 或仍未知，则可用作拦截轮次边界（仅当没有 transmission marker）
+        const allowAsInterception =
+          cur.missionKind !== "defense" && cur.interHasTransmissionMarker !== true;
+        if (allowAsInterception) {
+          cur.missionKind = "interception";
+          cur.phaseKind = "round";
+          cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
+          cur.roundCount = cur.interCompletedRounds;
+          // 第一次遇到边界：把此前累计的无人机归到第 1 轮
+          if (cur.interCompletedRounds === 1 && cur.pendingDronesBeforeFirstRoundMarker > 0) {
+            if (cur.phases.length < 1) cur.phases.push(0);
+            cur.phases[0] = (cur.phases[0] ?? 0) + cur.pendingDronesBeforeFirstRoundMarker;
+            cur.pendingDronesBeforeFirstRoundMarker = 0;
+          }
+          // 结算后进入下一轮（active round = completed + 1）
+          cur.curPhaseIndex = cur.interCompletedRounds + 1;
+        }
       }
     }
 

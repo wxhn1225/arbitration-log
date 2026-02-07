@@ -429,6 +429,27 @@ code {
   margin-bottom: 12px;
 }
 
+.runRight {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.copyBtn {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.copyBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .runTitle {
   font-size: 16px;
   font-weight: 800;
@@ -450,6 +471,15 @@ code {
   .runSub {
     text-align: left;
   }
+  .runRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* 截图模式：隐藏交互控件（不会出现在复制的图片里） */
+.shotMode [data-hide-in-shot="1"] {
+  display: none !important;
 }
 
 .err {

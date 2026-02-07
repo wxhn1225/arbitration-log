@@ -12,6 +12,20 @@ type NodeMeta = {
   faction?: string;
 };
 
+type RegionInfo = {
+  name?: string;
+  systemName?: string;
+  missionName?: string;
+  factionName?: string;
+};
+
+function t(dict: Record<string, string> | null, key?: string): string | undefined {
+  if (!key) return undefined;
+  const v = dict?.[key];
+  if (typeof v === "string" && v.trim()) return v;
+  return key;
+}
+
 function formatDuration(v?: number): string {
   if (v == null) return "-";
   const s = Math.max(0, Math.floor(v)); // 只显示整数部分（不四舍五入）
@@ -67,11 +81,17 @@ function gradeFor(perHour?: number): string {
 
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const runRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [nodeMap, setNodeMap] = useState<Record<string, NodeMeta> | null>(null);
+  const [regions, setRegions] = useState<Record<string, RegionInfo> | null>(null);
+  const [dictZh, setDictZh] = useState<Record<string, string> | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
+  const [copyResult, setCopyResult] = useState<{ idx: number; ok: boolean } | null>(
+    null
+  );
   const [buffs, setBuffs] = useState<BuffState>({
     blueBox: true,
     abundant: true,
@@ -82,22 +102,28 @@ export default function Page() {
 
   const missions = useMemo<MissionResult[]>(() => parse?.missions ?? [], [parse]);
 
-  useEffect(() => {
-    // 轻量：只加载一次节点映射（由 build 时脚本生成到 public/）
-    let cancelled = false;
-    fetch("./node-map.zh.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (cancelled) return;
-        if (json && typeof json === "object") setNodeMap(json as Record<string, NodeMeta>);
-      })
-      .catch(() => {
-        // 忽略：无映射时仅展示 nodeId
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const ensureWarframeData = async () => {
+    if (regions && dictZh) return { regions, dictZh };
+    try {
+      const base = "./warframe-public-export-plus";
+      const [r1, r2] = await Promise.all([
+        fetch(`${base}/ExportRegions.json`),
+        fetch(`${base}/dict.zh.json`),
+      ]);
+      const [j1, j2] = await Promise.all([
+        r1.ok ? r1.json() : null,
+        r2.ok ? r2.json() : null,
+      ]);
+      if (j1 && typeof j1 === "object") setRegions(j1 as Record<string, RegionInfo>);
+      if (j2 && typeof j2 === "object") setDictZh(j2 as Record<string, string>);
+      return {
+        regions: (j1 && typeof j1 === "object" ? (j1 as Record<string, RegionInfo>) : null),
+        dictZh: (j2 && typeof j2 === "object" ? (j2 as Record<string, string>) : null),
+      };
+    } catch {
+      return null;
+    }
+  };
 
   const metricsFor = (m?: MissionResult | null) => {
     const enemySpawned = m?.spawnedAtEnd ?? undefined;
@@ -177,15 +203,102 @@ export default function Page() {
   };
 
   const nodeInfoLine = (m: MissionResult) => {
-    const meta = m.nodeId ? nodeMap?.[m.nodeId] : undefined;
-    const parts = [
-      meta?.nodeName,
-      meta?.systemName,
-      meta?.missionType,
-      meta?.faction,
-    ].filter(Boolean) as string[];
+    if (!m.nodeId) return "-";
+    const info = regions?.[m.nodeId];
+    const meta: NodeMeta | undefined = info
+      ? {
+          nodeId: m.nodeId,
+          nodeName: t(dictZh, info.name),
+          systemName: t(dictZh, info.systemName),
+          missionType: t(dictZh, info.missionName),
+          faction: t(dictZh, info.factionName),
+        }
+      : undefined;
+    const parts = [meta?.nodeName, meta?.systemName, meta?.missionType, meta?.faction].filter(
+      Boolean
+    ) as string[];
     // 不展示 (SolNode94) 这类括号信息，只展示可读文本
-    return parts.join(" · ");
+    return parts.length ? parts.join(" · ") : m.nodeId;
+  };
+
+  useEffect(() => {
+    if (!copyResult) return;
+    const t = window.setTimeout(() => setCopyResult(null), 1400);
+    return () => window.clearTimeout(t);
+  }, [copyResult]);
+
+  const copyRunImage = async (idx: number) => {
+    const el = runRefs.current[idx];
+    if (!el) return;
+
+    setCopyingIdx(idx);
+    try {
+      const detailsEls = Array.from(el.querySelectorAll("details")) as HTMLDetailsElement[];
+      const openStates = detailsEls.map((d) => d.open);
+      detailsEls.forEach((d) => {
+        d.open = false;
+      });
+      el.classList.add("shotMode");
+
+      try {
+        // 等字体就绪，避免截图字形抖动（浏览器不支持则忽略）
+        const fontsReady = (document as unknown as { fonts?: { ready?: Promise<void> } })
+          .fonts?.ready;
+        if (fontsReady) await fontsReady.catch(() => {});
+
+        const { default: html2canvas } = await import("html2canvas");
+        const canvas = await html2canvas(el, {
+          backgroundColor: null,
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((b) => {
+            if (b) resolve(b);
+            else reject(new Error("toBlob failed"));
+          }, "image/png");
+        });
+
+        const fileName = `arbitration-log-${idx + 1}.png`;
+        const ClipboardItemCtor = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
+          .ClipboardItem;
+        const canWrite =
+          typeof ClipboardItemCtor !== "undefined" &&
+          typeof navigator !== "undefined" &&
+          !!navigator.clipboard &&
+          typeof (navigator.clipboard as unknown as { write?: unknown }).write === "function";
+
+        if (canWrite) {
+          await (navigator.clipboard as unknown as { write: (items: ClipboardItem[]) => Promise<void> }).write([
+            new ClipboardItemCtor({ [blob.type]: blob }),
+          ]);
+        } else {
+          // 兼容：不支持写剪贴板图片时，直接下载 PNG
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+        }
+
+        setCopyResult({ idx, ok: true });
+      } finally {
+        el.classList.remove("shotMode");
+        const detailsEls2 = Array.from(el.querySelectorAll("details")) as HTMLDetailsElement[];
+        detailsEls2.forEach((d, i) => {
+          d.open = openStates[i] ?? false;
+        });
+      }
+    } catch {
+      setCopyResult({ idx, ok: false });
+    } finally {
+      setCopyingIdx((v) => (v === idx ? null : v));
+    }
   };
 
   const handleFile = async (file: File) => {
@@ -193,9 +306,16 @@ export default function Page() {
     setParse(null);
     setProgress(0);
     try {
+      // 节点信息：按原生 ExportRegions + dict.zh.json 实时翻译（用于展示）
+      // 加载失败不影响解析，只会影响节点信息展示
+      if (!regions || !dictZh) await ensureWarframeData();
       const res = await parseRecentValidEeLogFromFile(
         file,
-        { count: 2, minDurationSec: 60, chunkBytes: 4 * 1024 * 1024 },
+        {
+          count: 2,
+          minDurationSec: 60,
+          chunkBytes: 4 * 1024 * 1024,
+        },
         (p) => setProgress(p)
       );
       setParse(res);
@@ -318,11 +438,33 @@ export default function Page() {
                     ? "轮次"
                     : "阶段";
               return (
-                <div key={idx} className="runBlock">
+                <div
+                  key={idx}
+                  className="runBlock"
+                  ref={(node) => {
+                    runRefs.current[idx] = node;
+                  }}
+                >
                   <div className="runHeader">
                     <div className="runTitle">最近有效第 {idx + 1} 把</div>
-                    <div className="runSub">
-                      {nodeInfoLine(m) || "-"}
+                    <div className="runRight">
+                      <div className="runSub">{nodeInfoLine(m) || "-"}</div>
+                      <button
+                        type="button"
+                        className="btn copyBtn"
+                        data-hide-in-shot="1"
+                        disabled={copyingIdx === idx}
+                        onClick={() => void copyRunImage(idx)}
+                        title="复制该把分析图片"
+                      >
+                        {copyingIdx === idx
+                          ? "复制中…"
+                          : copyResult?.idx === idx
+                            ? copyResult.ok
+                              ? "已复制"
+                              : "复制失败"
+                            : "复制图片"}
+                      </button>
                     </div>
                   </div>
                   <div className="metricsBig">
