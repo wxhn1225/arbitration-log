@@ -299,13 +299,13 @@ export default function Page() {
         </div>
 
         <div className="helpLine">
-          <span>ee.log 路径：%LOCALAPPDATA%\Warframe</span>
+          <span>EE.log 路径：%LOCALAPPDATA%\Warframe</span>
           <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
         </div>
 
         <div className="topbar">
           <div className="actions">
-            <span className="hint">仅限主机的 ee.log</span>
+            <span className="hint">仅限主机的 EE.log</span>
             {progress != null ? (
               <span className="warnTag">{Math.round(progress * 100)}%</span>
             ) : null}
