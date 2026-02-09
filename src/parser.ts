@@ -693,6 +693,8 @@ export async function parseRecentValidEeLogFromFile(
     stateEndingLine?: number;
     eomTime?: number;
     eomLine?: number;
+    lastSeenTime?: number; // 用于“未结束也可分析”的进行中时长估算
+    lastSeenLine?: number;
 
     // phases (defense waves or interception rounds)
     missionKind?: "defense" | "interception" | "unknown";
@@ -714,16 +716,22 @@ export async function parseRecentValidEeLogFromFile(
   const finalize = () => {
     if (!cur) return;
     const run = cur;
+    // 未结束时：用最后看到的时间当作“当前结束时间”，以便输出进行中统计
+    const effectiveEndTime =
+      run.endTime ?? run.eomTime ?? run.stateEndingTime ?? run.lastOnAgentTime ?? run.lastSeenTime;
     const durationSec =
-      run.startTime != null && run.endTime != null ? run.endTime - run.startTime : undefined;
+      run.startTime != null && effectiveEndTime != null ? effectiveEndTime - run.startTime : undefined;
     const onAgentSpanSec =
       run.firstOnAgentTime != null && run.lastOnAgentTime != null
         ? run.lastOnAgentTime - run.firstOnAgentTime
         : undefined;
+    // 进行中：若未进入 SS_ENDING，则用 lastSeenTime 估算已进行的 stateDurationSec
     const stateDurationSec =
       run.stateStartedTime != null && run.stateEndingTime != null
         ? run.stateEndingTime - run.stateStartedTime
-        : undefined;
+        : run.stateStartedTime != null && run.lastSeenTime != null
+          ? run.lastSeenTime - run.stateStartedTime
+          : undefined;
     const eomDurationSec =
       run.stateStartedTime != null && run.eomTime != null ? run.eomTime - run.stateStartedTime : undefined;
 
@@ -773,7 +781,7 @@ export async function parseRecentValidEeLogFromFile(
       startLine: run.startLine,
       endLine: run.endLine,
       startTime: run.startTime,
-      endTime: run.endTime,
+      endTime: run.endTime ?? effectiveEndTime,
       durationSec: durationSec != null && Number.isFinite(durationSec) ? durationSec : undefined,
       stateStartedTime: run.stateStartedTime,
       stateEndingTime: run.stateEndingTime,
@@ -803,7 +811,12 @@ export async function parseRecentValidEeLogFromFile(
       status: run.endLine != null ? "ok" : "incomplete",
     };
 
-    if (totalSec != null && totalSec >= minDurationSec) {
+    const hasStarted = run.stateStartedLine != null;
+    const hasSpawnSignals =
+      run.shieldDroneCount > 0 || run.lastSpawned != null || run.firstOnAgentTime != null;
+    // 规则：即使没有结束标记，只要已开始并且有生成信号，也认为“这是一个仲裁”，允许输出（进行中）
+    const allowIncomplete = run.endLine == null && hasStarted && hasSpawnSignals;
+    if ((totalSec != null && totalSec >= minDurationSec) || allowIncomplete) {
       valid.push(m);
       while (valid.length > count) valid.shift();
     }
@@ -849,6 +862,13 @@ export async function parseRecentValidEeLogFromFile(
     }
 
     if (!cur) return;
+
+    // 记录进行中“当前时间”（用于未结束也可分析）
+    const seenT = parseTime(line);
+    if (seenT != null) {
+      cur.lastSeenTime = seenT;
+      cur.lastSeenLine = lineNo;
+    }
 
     // 先更新状态机时间（用于限定统计窗口）
     if (cur.stateStartedTime == null && reStateStarted.test(line)) {
