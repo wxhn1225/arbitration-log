@@ -88,12 +88,16 @@ function gradeFor(perHour?: number): string {
 
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const lastFileRef = useRef<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regions, setRegions] = useState<Record<string, RegionInfo> | null>(null);
   const [dictZh, setDictZh] = useState<Record<string, string> | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [showCount, setShowCount] = useState<number>(2);
+  const [showCountInput, setShowCountInput] = useState<string>("2");
+  const [displayCount, setDisplayCount] = useState<number>(2);
   const [timeModeByIdx, setTimeModeByIdx] = useState<Record<number, TimeMode>>({});
   const [manualHmsByIdx, setManualHmsByIdx] = useState<Record<number, ManualHms>>({});
   const [actualEssenceByIdx, setActualEssenceByIdx] = useState<Record<number, string>>({});
@@ -106,6 +110,12 @@ export default function Page() {
   const mul = useMemo(() => buffMultiplier(buffs), [buffs]);
 
   const missions = useMemo<MissionResult[]>(() => parse?.missions ?? [], [parse]);
+  const visibleMissions = useMemo(() => {
+    if (displayCount <= 0) return [];
+    if (missions.length <= displayCount) return missions;
+    // 展示“最近”的 N 次：取末尾
+    return missions.slice(Math.max(0, missions.length - displayCount));
+  }, [missions, displayCount]);
 
   const ensureWarframeData = async () => {
     if (regions && dictZh) return { regions, dictZh };
@@ -216,7 +226,8 @@ export default function Page() {
     return parts.length ? parts.join(" · ") : m.nodeId;
   };
 
-  const handleFile = async (file: File) => {
+  const handleFile = async (file: File, countOverride?: number) => {
+    lastFileRef.current = file;
     setError(null);
     setParse(null);
     setProgress(0);
@@ -227,16 +238,18 @@ export default function Page() {
       // 节点信息：按原生 ExportRegions + dict.zh.json 实时翻译（用于展示）
       // 加载失败不影响解析，只会影响节点信息展示
       if (!regions || !dictZh) await ensureWarframeData();
+      const useCount = countOverride ?? showCount;
       const res = await parseRecentValidEeLogFromFile(
         file,
         {
-          count: 2,
+          count: useCount,
           minDurationSec: 60,
           chunkBytes: 4 * 1024 * 1024,
         },
         (p) => setProgress(p)
       );
       setParse(res);
+      setDisplayCount(useCount);
     } catch (e) {
       setError(e instanceof Error ? e.message : "读取或解析失败");
     } finally {
@@ -303,7 +316,7 @@ export default function Page() {
 
         <div className="helpLine">
           <span>EE.log 路径：%LOCALAPPDATA%\Warframe</span>
-          <span>仅显示最近有效 2 把（时长 &lt; 1 分钟自动排除）</span>
+          <span>时长 &lt; 1 分钟自动排除</span>
         </div>
 
         <div className="topbar">
@@ -313,12 +326,51 @@ export default function Page() {
               <span className="warnTag">{Math.round(progress * 100)}%</span>
             ) : null}
             {error ? <span className="err">解析失败</span> : null}
-            {missions.some((m) => m.status === "incomplete") ? (
+            {visibleMissions.some((m) => m.status === "incomplete") ? (
               <span className="warnTag">incomplete</span>
             ) : null}
             <label className="btn primary" htmlFor="file">
               上传
             </label>
+            <label className="countPick">
+              <span>展示</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                step="1"
+                value={showCountInput}
+                onChange={(e) => setShowCountInput(e.target.value)}
+              />
+              <span>次</span>
+              <span style={{ opacity: 0.72 }}>
+                Max：{parse?.validTotal ?? "-"}次
+              </span>
+            </label>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                const max = parse?.validTotal;
+                const n0 = Number(showCountInput);
+                const n = Number.isFinite(n0) ? Math.max(1, Math.floor(n0)) : 2;
+                const clamped = max != null ? Math.min(n, Math.max(1, max)) : n;
+                setShowCount(clamped);
+                setShowCountInput(String(clamped));
+                        setDisplayCount(clamped);
+                        // 立刻按新值展示：若当前结果不足再自动重解析补齐
+                        if (clamped <= missions.length) {
+                          setTimeModeByIdx({});
+                          setManualHmsByIdx({});
+                          setActualEssenceByIdx({});
+                        } else if (lastFileRef.current) {
+                          void handleFile(lastFileRef.current, clamped);
+                        }
+              }}
+              disabled={!lastFileRef.current || progress != null}
+            >
+              应用
+            </button>
             <button
               type="button"
               className="btn ghost"
@@ -328,6 +380,10 @@ export default function Page() {
                 setTimeModeByIdx({});
                 setManualHmsByIdx({});
                 setActualEssenceByIdx({});
+                setShowCount(2);
+                setShowCountInput("2");
+                setDisplayCount(2);
+                lastFileRef.current = null;
                 if (fileRef.current) fileRef.current.value = "";
               }}
             >
@@ -347,10 +403,10 @@ export default function Page() {
         </div>
 
         <div className="runs">
-          {missions.length === 0 ? (
+          {visibleMissions.length === 0 ? (
             <div className="empty">暂无有效记录</div>
           ) : (
-            missions.map((m, idx) => {
+            visibleMissions.map((m, idx) => {
               const metrics = metricsFor(m);
               const timeMode = timeModeByIdx[idx] ?? "host";
               const manual = manualHmsByIdx[idx] ?? { h: "", m: "", s: "" };
@@ -406,7 +462,7 @@ export default function Page() {
               return (
                 <div key={idx} className="runBlock">
                   <div className="runHeader">
-                    <div className="runTitle" aria-label={`最近有效第 ${idx + 1} 把`}>
+                    <div className="runTitle" aria-label={`最近有效第 ${idx + 1} 次`}>
                       <span className="runIndex">{String(idx + 1).padStart(2, "0")}</span>
                     </div>
                     <div className="runSub">{nodeInfoLine(m) || "-"}</div>

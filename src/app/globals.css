@@ -193,6 +193,30 @@ button,
   transition: none;
   user-select: none;
 }
+
+.countPick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  user-select: none;
+}
+
+.countPick input {
+  width: 66px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 10px;
+  outline: none;
+}
 button:hover,
 .btn:hover {
   border-color: rgba(255, 255, 255, 0.24);

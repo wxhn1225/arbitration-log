@@ -38,6 +38,7 @@ export type MissionResult = {
 export type ParseResult = {
   missions: MissionResult[];
   warnings: string[];
+  validTotal?: number; // 日志内总共识别到多少把“有效仲裁”
 };
 
 // 有些日志行会在时间戳前带 "!"（例如 "!4631.303"），需要兼容
@@ -661,7 +662,7 @@ export async function parseLatestEeLogFromFile(
 }
 
 /**
- * 解析“最近有效的 N 把仲裁”（默认 2 把），并排除时长 < 60s 的记录。
+ * 解析“最近有效的 N 次仲裁”（默认 2 次），并排除时长 < 60s 的记录。
  * 为移动端优化：仅读取文件尾部并逐步扩大窗口。
  */
 export async function parseRecentValidEeLogFromFile(
@@ -721,6 +722,7 @@ export async function parseRecentValidEeLogFromFile(
 
   let cur: Run | null = null;
   const valid: MissionResult[] = [];
+  let validTotal = 0;
   const warnings: string[] = [];
 
   const finalize = () => {
@@ -838,7 +840,9 @@ export async function parseRecentValidEeLogFromFile(
       run.shieldDroneCount > 0 || run.lastSpawned != null || run.firstOnAgentTime != null;
     // 规则：即使没有结束标记，只要已开始并且有生成信号，也认为“这是一个仲裁”，允许输出（进行中）
     const allowIncomplete = run.endLine == null && hasStarted && hasSpawnSignals;
-    if ((totalSec != null && totalSec >= minDurationSec) || allowIncomplete) {
+    const isValid = (totalSec != null && totalSec >= minDurationSec) || allowIncomplete;
+    if (isValid) {
+      validTotal++;
       valid.push(m);
       while (valid.length > count) valid.shift();
     }
@@ -1079,8 +1083,8 @@ export async function parseRecentValidEeLogFromFile(
 
   const missions = valid.map((m, idx) => ({ ...m, index: idx + 1 }));
   if (missions.length < count) {
-    warnings.push(`有效记录不足：仅找到 ${missions.length} 把（过滤阈值 ${minDurationSec}s）。`);
+    warnings.push(`有效记录不足：仅找到 ${missions.length} 次（过滤阈值 ${minDurationSec}s）。`);
   }
-  return { missions, warnings };
+  return { missions, warnings, validTotal };
 }
 
