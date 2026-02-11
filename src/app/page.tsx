@@ -65,7 +65,7 @@ type TimeMode = "host" | "lastClient" | "manual";
 type ManualHms = { h: string; m: string; s: string };
 
 const BASE_DROP = 0.06;
-const EXTRA_PER_ROUND_PROB = 0.07;
+const EXTRA_PER_ROUND_PROB = 0.1;
 const EXTRA_PER_ROUND_AMOUNT = 3;
 
 function buffMultiplier(b: BuffState): number {
