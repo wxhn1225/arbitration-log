@@ -50,12 +50,19 @@ function formatNumber(v?: number, digits = 3): string {
   return v.toFixed(digits);
 }
 
+function formatSignedPercent(v?: number): string {
+  if (v == null || !Number.isFinite(v)) return "-";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+}
+
 type BuffState = {
   blueBox: boolean; // ×2
   abundant: boolean; // ×1.18
   yellowBox: boolean; // ×2
   blessing: boolean; // ×1.25
 };
+type TimeMode = "host" | "lastClient" | "manual";
+type ManualHms = { h: string; m: string; s: string };
 
 const BASE_DROP = 0.06;
 const EXTRA_PER_ROUND_PROB = 0.07;
@@ -87,6 +94,9 @@ export default function Page() {
   const [regions, setRegions] = useState<Record<string, RegionInfo> | null>(null);
   const [dictZh, setDictZh] = useState<Record<string, string> | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [timeModeByIdx, setTimeModeByIdx] = useState<Record<number, TimeMode>>({});
+  const [manualHmsByIdx, setManualHmsByIdx] = useState<Record<number, ManualHms>>({});
+  const [actualEssenceByIdx, setActualEssenceByIdx] = useState<Record<number, string>>({});
   const [buffs, setBuffs] = useState<BuffState>({
     blueBox: true,
     abundant: true,
@@ -123,7 +133,7 @@ export default function Page() {
   const metricsFor = (m?: MissionResult | null) => {
     const enemySpawned = m?.spawnedAtEnd ?? undefined;
     const drones = m?.shieldDroneCount ?? undefined;
-    const totalSec =
+    const hostTotalSec =
       m?.eomDurationSec != null && m.eomDurationSec > 0
         ? m.eomDurationSec
         : m?.stateDurationSec != null && m.stateDurationSec > 0
@@ -133,9 +143,9 @@ export default function Page() {
           : m?.durationSec != null && m.durationSec > 0
             ? m.durationSec
             : undefined;
-    const dronesPerMin =
-      drones != null && totalSec != null && totalSec > 0
-        ? drones / (totalSec / 60)
+    const lastClientTotalSec =
+      m?.lastClientDurationSec != null && m.lastClientDurationSec > 0
+        ? m.lastClientDurationSec
         : undefined;
 
     const waveCount = m?.waveCount;
@@ -155,12 +165,8 @@ export default function Page() {
           : expectedFromRounds != null
             ? expectedFromRounds
             : undefined;
-    const expectedPerHour =
-      expectedTotal != null && totalSec != null && totalSec > 0
-        ? (expectedTotal * 3600) / totalSec
-        : undefined;
 
-    // 满状态评级（不受勾选影响）
+    // 满状态（用于评级）
     const fullMul = 2 * 1.18 * 2 * 1.25;
     const fullExpectedFromDrones =
       drones != null ? drones * BASE_DROP * fullMul : undefined;
@@ -176,24 +182,18 @@ export default function Page() {
           : fullExpectedFromRounds != null
             ? fullExpectedFromRounds
             : undefined;
-    const fullExpectedPerHour =
-      fullExpectedTotal != null && totalSec != null && totalSec > 0
-        ? (fullExpectedTotal * 3600) / totalSec
-        : undefined;
 
     return {
       enemySpawned,
       drones,
-      totalSec,
-      dronesPerMin,
+      hostTotalSec,
+      lastClientTotalSec,
       waveCount,
       roundCount,
       expectedFromDrones,
       expectedFromRounds,
       expectedTotal,
-      expectedPerHour,
-      fullExpectedPerHour,
-      grade: gradeFor(fullExpectedPerHour),
+      fullExpectedTotal,
     };
   };
 
@@ -220,6 +220,9 @@ export default function Page() {
     setError(null);
     setParse(null);
     setProgress(0);
+    setTimeModeByIdx({});
+    setManualHmsByIdx({});
+    setActualEssenceByIdx({});
     try {
       // 节点信息：按原生 ExportRegions + dict.zh.json 实时翻译（用于展示）
       // 加载失败不影响解析，只会影响节点信息展示
@@ -322,6 +325,9 @@ export default function Page() {
               onClick={() => {
                 setError(null);
                 setParse(null);
+                setTimeModeByIdx({});
+                setManualHmsByIdx({});
+                setActualEssenceByIdx({});
                 if (fileRef.current) fileRef.current.value = "";
               }}
             >
@@ -346,6 +352,51 @@ export default function Page() {
           ) : (
             missions.map((m, idx) => {
               const metrics = metricsFor(m);
+              const timeMode = timeModeByIdx[idx] ?? "host";
+              const manual = manualHmsByIdx[idx] ?? { h: "", m: "", s: "" };
+              const mh = Number(manual.h);
+              const mm = Number(manual.m);
+              const ms = Number(manual.s);
+              const manualSec =
+                (Number.isFinite(mh) ? Math.max(0, mh) : 0) * 3600 +
+                (Number.isFinite(mm) ? Math.max(0, mm) : 0) * 60 +
+                (Number.isFinite(ms) ? Math.max(0, ms) : 0);
+              const selectedSec =
+                timeMode === "host"
+                  ? metrics.hostTotalSec
+                  : timeMode === "lastClient"
+                    ? metrics.lastClientTotalSec ?? metrics.hostTotalSec
+                    : manualSec > 0
+                      ? manualSec
+                      : metrics.hostTotalSec;
+              const dronesPerMin =
+                metrics.drones != null && selectedSec != null && selectedSec > 0
+                  ? metrics.drones / (selectedSec / 60)
+                  : undefined;
+              const expectedPerHour =
+                metrics.expectedTotal != null && selectedSec != null && selectedSec > 0
+                  ? (metrics.expectedTotal * 3600) / selectedSec
+                  : undefined;
+              const expectedPerMin =
+                metrics.expectedTotal != null && selectedSec != null && selectedSec > 0
+                  ? (metrics.expectedTotal * 60) / selectedSec
+                  : undefined;
+              const fullExpectedPerHour =
+                metrics.fullExpectedTotal != null && selectedSec != null && selectedSec > 0
+                  ? (metrics.fullExpectedTotal * 3600) / selectedSec
+                  : undefined;
+              const grade = gradeFor(fullExpectedPerHour);
+              const actualText = actualEssenceByIdx[idx] ?? "";
+              const actualEssence = Number(actualText);
+              const diffPct =
+                Number.isFinite(actualEssence) &&
+                metrics.expectedTotal != null &&
+                metrics.expectedTotal > 0
+                  ? ((actualEssence - metrics.expectedTotal) / metrics.expectedTotal) * 100
+                  : undefined;
+              const diffClass =
+                diffPct != null ? (diffPct > 0 ? "diffPos" : diffPct < 0 ? "diffNeg" : "diffFlat") : "";
+              const diffText = diffPct == null ? "-" : formatSignedPercent(diffPct);
               const phaseLabel =
                 m.missionKind === "defense"
                   ? "波次"
@@ -371,17 +422,98 @@ export default function Page() {
                     </div>
                     <div className="metric metricC">
                       <div className="metricLabel">无人机生成/分钟</div>
-                      <div className="metricValue">{formatPerMin(metrics.dronesPerMin)}</div>
+                      <div className="metricValue">{formatPerMin(dronesPerMin)}</div>
                     </div>
                     <div className="metric metricD">
                       <div className="metricLabel">总时间</div>
-                      <div className="metricValue">{formatDuration(metrics.totalSec)}</div>
+                      <div className="metricValue">{formatDuration(selectedSec)}</div>
                     </div>
+                  </div>
+
+                  <div className="timeModeBar">
+                    <label className="modeItem">
+                      <input
+                        type="radio"
+                        name={`time-mode-${idx}`}
+                        checked={timeMode === "host"}
+                        onChange={() => setTimeModeByIdx((s) => ({ ...s, [idx]: "host" }))}
+                      />
+                      <span>主机时间</span>
+                    </label>
+                    <label className="modeItem">
+                      <input
+                        type="radio"
+                        name={`time-mode-${idx}`}
+                        checked={timeMode === "lastClient"}
+                        onChange={() => setTimeModeByIdx((s) => ({ ...s, [idx]: "lastClient" }))}
+                        disabled={metrics.lastClientTotalSec == null}
+                      />
+                      <span>最后客机时间 {formatDuration(metrics.lastClientTotalSec)}</span>
+                    </label>
+                    <label className="modeItem">
+                      <input
+                        type="radio"
+                        name={`time-mode-${idx}`}
+                        checked={timeMode === "manual"}
+                        onChange={() => setTimeModeByIdx((s) => ({ ...s, [idx]: "manual" }))}
+                      />
+                      <span>自定义时间</span>
+                    </label>
+                    {timeMode === "manual" ? (
+                      <label className="modeInput modeInputHms">
+                        <span>h</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={manual.h}
+                          onChange={(e) =>
+                            setManualHmsByIdx((s) => ({ ...s, [idx]: { ...(s[idx] ?? { h: "", m: "", s: "" }), h: e.target.value } }))
+                          }
+                        />
+                        <span>m</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={manual.m}
+                          onChange={(e) =>
+                            setManualHmsByIdx((s) => ({ ...s, [idx]: { ...(s[idx] ?? { h: "", m: "", s: "" }), m: e.target.value } }))
+                          }
+                        />
+                        <span>s</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="1"
+                          value={manual.s}
+                          onChange={(e) =>
+                            setManualHmsByIdx((s) => ({ ...s, [idx]: { ...(s[idx] ?? { h: "", m: "", s: "" }), s: e.target.value } }))
+                          }
+                        />
+                      </label>
+                    ) : null}
+                    <label className="modeInput">
+                      <span>实际生息</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={actualText}
+                        onChange={(e) =>
+                          setActualEssenceByIdx((s) => ({ ...s, [idx]: e.target.value }))
+                        }
+                      />
+                    </label>
                   </div>
 
                   <div className="metricsSmall">
                     <div className="mini">
-                      <div className="miniLabel">波数</div>
+                      <div className="miniLabel">波次</div>
                       <div className="miniValue">{metrics.waveCount ?? "-"}</div>
                     </div>
                     <div className="mini">
@@ -392,13 +524,20 @@ export default function Page() {
                       <div className="miniLabel">期望生息</div>
                       <div className="miniValue">{formatNumber(metrics.expectedTotal, 3)}</div>
                     </div>
-                    <div className="mini">
-                      <div className="miniLabel">1h 期望</div>
-                      <div className="miniValue">{formatNumber(metrics.expectedPerHour, 1)}</div>
+                    <div className="mini miniDual">
+                      <div className="miniLabel">生息速率</div>
+                      <div className="miniSub">h: {formatNumber(expectedPerHour, 1)}</div>
+                      <div className="miniSub">min: {formatNumber(expectedPerMin, 2)}</div>
                     </div>
+                    {actualText.trim() ? (
+                      <div className="mini">
+                        <div className="miniLabel">偏差</div>
+                        <div className={`miniValue ${diffClass}`}>{diffText}</div>
+                      </div>
+                    ) : null}
                     <div className="mini">
                       <div className="miniLabel">评级</div>
-                      <div className="miniValue">{metrics.grade}</div>
+                      <div className="miniValue">{grade}</div>
                     </div>
                   </div>
 

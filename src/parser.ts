@@ -16,6 +16,8 @@ export type MissionResult = {
   stateDurationSec?: number; // stateEndingTime - stateStartedTime
   eomTime?: number; // EndOfMatch/Extraction (mission complete UI) timestamp
   eomDurationSec?: number; // eomTime - stateStartedTime
+  lastClientJoinTime?: number; // 最后一个“中途加入”的客机开始计时时间
+  lastClientDurationSec?: number; // 结束参考时间 - lastClientJoinTime
   spawnedAtEnd?: number; // Spawned N from last OnAgentCreated in segment
   firstOnAgentCreatedTime?: number;
   lastOnAgentCreatedTime?: number;
@@ -64,6 +66,12 @@ const reStateEnding =
 // 任务结算 UI 出现的时间（通常更接近玩家看到的“结算用时”）
 const reEomInit = /Script \[Info\]: EndOfMatch\.lua: Initialize\b/;
 const reAllExtracting = /Script \[Info\]: ExtractionTimer\.lua: EOM: All players extracting\b/;
+const reClientJoinInProgressNode =
+  /Script \[Info\]: ThemedSquadOverlay\.lua: LoadLevelMsg received\. Client joining mission in-progress:\s*\{"name":"([^"]+)_EliteAlert"\}/;
+const reSendLoadLevelNode =
+  /Net \[Info\]: Sending LOAD_LEVEL to (.+?)\s+\[mission=\{"name":"([^"]+)_EliteAlert"\}\]/;
+const reCreatePlayerForClient =
+  /Game \[Info\]: CreatePlayerForClient\. id=(\d+), user name=(.+)$/;
 
 const reAnyOnAgentCreated = /AI \[Info\]: OnAgentCreated\b/;
 const reSpawned = /\bSpawned\s+(\d+)\b/;
@@ -693,6 +701,8 @@ export async function parseRecentValidEeLogFromFile(
     stateEndingLine?: number;
     eomTime?: number;
     eomLine?: number;
+    lastClientJoinTime?: number;
+    loadLevelSentFirstByPlayer: Record<string, number>; // 同一客机重复发送只保留第一次
     lastSeenTime?: number; // 用于“未结束也可分析”的进行中时长估算
     lastSeenLine?: number;
 
@@ -734,6 +744,13 @@ export async function parseRecentValidEeLogFromFile(
           : undefined;
     const eomDurationSec =
       run.stateStartedTime != null && run.eomTime != null ? run.eomTime - run.stateStartedTime : undefined;
+    // 客机口径：优先用 EOM 时间（更贴近玩家看到的“结算用时”），避免被 EliteAlertMission/SS_ENDING 拉长
+    const clientEndTime =
+      run.eomTime ?? run.endTime ?? run.stateEndingTime ?? run.lastOnAgentTime ?? run.lastSeenTime;
+    const lastClientDurationSec =
+      run.lastClientJoinTime != null && clientEndTime != null
+        ? clientEndTime - run.lastClientJoinTime
+        : undefined;
 
     const totalSec = pickTotalSec({
       eomDurationSec: eomDurationSec != null && Number.isFinite(eomDurationSec) ? eomDurationSec : undefined,
@@ -790,6 +807,11 @@ export async function parseRecentValidEeLogFromFile(
       eomTime: run.eomTime,
       eomDurationSec:
         eomDurationSec != null && Number.isFinite(eomDurationSec) ? eomDurationSec : undefined,
+      lastClientJoinTime: run.lastClientJoinTime,
+      lastClientDurationSec:
+        lastClientDurationSec != null && Number.isFinite(lastClientDurationSec)
+          ? lastClientDurationSec
+          : undefined,
       spawnedAtEnd: run.lastSpawned,
       firstOnAgentCreatedTime: run.firstOnAgentTime,
       lastOnAgentCreatedTime: run.lastOnAgentTime,
@@ -856,6 +878,7 @@ export async function parseRecentValidEeLogFromFile(
         interCompletedRounds: 0,
         interHasTransmissionMarker: false,
         pendingDronesBeforeFirstRoundMarker: 0,
+        loadLevelSentFirstByPlayer: {},
       };
       if (voteNode?.[1]) cur.nodeId = voteNode[1];
       return;
@@ -919,6 +942,40 @@ export async function parseRecentValidEeLogFromFile(
       if (t != null) {
         cur.eomTime = t;
         cur.eomLine = lineNo;
+      }
+    }
+
+    // “客机开始计时”标记：取最后一次
+    // 1) 客机 in-progress 加入（有些日志会出现）
+    // 2) 主机向客机发送 LOAD_LEVEL（更常见，19.log 的 Odin 也是靠这个）
+    if (afterStarted) {
+      const j = line.match(reClientJoinInProgressNode);
+      if (j && cur.nodeId && j[1] === cur.nodeId) {
+        const t = parseTime(line);
+        if (t != null) cur.lastClientJoinTime = t;
+      }
+      const s = line.match(reSendLoadLevelNode);
+      if (s && cur.nodeId && s[2] === cur.nodeId) {
+        const t = parseTime(line);
+        const player = s[1]?.trim();
+        if (t != null && player) {
+          if (cur.loadLevelSentFirstByPlayer[player] == null) {
+            cur.loadLevelSentFirstByPlayer[player] = t;
+          }
+          // “最后客机”定义：按每个客机的首次 LOAD_LEVEL 时间，取其中最晚的一位
+          const times = Object.values(cur.loadLevelSentFirstByPlayer);
+          if (times.length > 0) cur.lastClientJoinTime = Math.max(...times);
+        }
+      }
+      // 客机“真正进入任务”更接近的标记：CreatePlayerForClient(id>0)
+      // id=0 通常是主机本人；id>0 视为客机连接
+      const cp = line.match(reCreatePlayerForClient);
+      if (cp) {
+        const pid = Number(cp[1]);
+        if (Number.isFinite(pid) && pid > 0) {
+          const t = parseTime(line);
+          if (t != null) cur.lastClientJoinTime = t;
+        }
       }
     }
 

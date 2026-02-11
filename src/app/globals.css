@@ -649,7 +649,7 @@ code {
 .metricsSmall {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: 10px;
 }
 
@@ -657,6 +657,57 @@ code {
   .metricsSmall {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.timeModeBar {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modeItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.modeItem input {
+  accent-color: var(--accent);
+}
+
+.modeInput {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.80);
+}
+
+.modeInput input {
+  width: 84px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 8px;
+  outline: none;
+}
+
+.modeInputHms input {
+  width: 58px;
 }
 
 .mini {
@@ -678,6 +729,26 @@ code {
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.90);
+}
+
+.miniValue.diffPos {
+  color: #22c55e;
+}
+
+.miniValue.diffNeg {
+  color: #f87171;
+}
+
+.miniValue.diffFlat {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.miniDual .miniSub {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.88);
+  font-variant-numeric: tabular-nums;
 }
 
 .detail {
