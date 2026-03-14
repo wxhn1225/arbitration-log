@@ -39,6 +39,9 @@ export type ParseResult = {
   missions: MissionResult[];
   warnings: string[];
   validTotal?: number; // 日志内总共识别到多少把“有效仲裁”
+  readComplete?: boolean; // 流式读取是否完整跑到文件末尾
+  readProgress01?: number; // 读取进度（0~1），readComplete=false 时才有意义
+  readStopReason?: string; // 未读完原因（仅用于提示）
 };
 
 // 有些日志行会在时间戳前带 "!"（例如 "!4631.303"），需要兼容
@@ -724,6 +727,9 @@ export async function parseRecentValidEeLogFromFile(
   const valid: MissionResult[] = [];
   let validTotal = 0;
   const warnings: string[] = [];
+  let readComplete = true;
+  let readProgress01: number | undefined = undefined;
+  let readStopReason: string | undefined = undefined;
 
   const finalize = () => {
     if (!cur) return;
@@ -1067,7 +1073,17 @@ export async function parseRecentValidEeLogFromFile(
 
   while (offset < file.size) {
     const end = Math.min(file.size, offset + chunkBytes);
-    const buf = await file.slice(offset, end).arrayBuffer();
+    let buf: ArrayBuffer;
+    try {
+      buf = await file.slice(offset, end).arrayBuffer();
+    } catch (e) {
+      // 常见原因：文件被游戏/杀软占用、文件句柄异常、用户选择文件时仍在写入等
+      readComplete = false;
+      readProgress01 = file.size ? offset / file.size : 0;
+      readStopReason = `读取失败：offset=${offset}, end=${end}（可能文件正在被占用/写入）`;
+      warnings.push(`${readStopReason}。已返回当前已解析结果。`);
+      break;
+    }
     const text = decoder.decode(buf, { stream: true });
     const combined = carry + text;
     const parts = combined.split(/\r?\n/);
@@ -1085,6 +1101,13 @@ export async function parseRecentValidEeLogFromFile(
   if (missions.length < count) {
     warnings.push(`有效记录不足：仅找到 ${missions.length} 次（过滤阈值 ${minDurationSec}s）。`);
   }
-  return { missions, warnings, validTotal };
+  return {
+    missions,
+    warnings,
+    validTotal,
+    readComplete,
+    readProgress01: readComplete ? 1 : readProgress01,
+    readStopReason,
+  };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import type { MissionResult, ParseResult } from "../parser";
 import { parseRecentValidEeLogFromFile } from "../parser";
 
@@ -86,9 +86,19 @@ function gradeFor(perHour?: number): string {
   return "F";
 }
 
+function gradeCssClass(grade: string): string {
+  if (grade === "S") return "gradeS";
+  if (grade === "A+") return "gradeAPlus";
+  if (grade === "A") return "gradeA";
+  if (grade === "A-") return "gradeAMinus";
+  return "gradeF";
+}
+
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const lastFileRef = useRef<File | null>(null);
+  const runRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +186,7 @@ export default function Page() {
             ? expectedFromRounds
             : undefined;
 
-    // 满状态（用于评级）
+    // 满状态（用于评分）
     const fullMul = 2 * 1.18 * 2 * 1.25;
     const fullExpectedFromDrones =
       drones != null ? drones * BASE_DROP * fullMul : undefined;
@@ -226,10 +236,14 @@ export default function Page() {
     return parts.length ? parts.join(" · ") : m.nodeId;
   };
 
-  const handleFile = async (file: File, countOverride?: number) => {
+  const handleFile = async (
+    file: File,
+    countOverride?: number,
+    opts?: { preserveExisting?: boolean }
+  ) => {
     lastFileRef.current = file;
     setError(null);
-    setParse(null);
+    if (!opts?.preserveExisting) setParse(null);
     setProgress(0);
     setTimeModeByIdx({});
     setManualHmsByIdx({});
@@ -257,8 +271,48 @@ export default function Page() {
     }
   };
 
+  const captureRun = async (idx: number) => {
+    const el = runRefs.current[idx];
+    if (!el) return;
+    setCopyingIdx(idx);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(el, {
+        backgroundColor: "#0d0e17",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      await new Promise<void>((resolve) => {
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            try {
+              await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            } catch {
+              // clipboard API not available – fallback to download
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `arbitration-${String(idx + 1).padStart(2, "0")}.png`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          }
+          resolve();
+        }, "image/png");
+      });
+    } catch {
+      // ignore
+    } finally {
+      setTimeout(() => setCopyingIdx(null), 1600);
+    }
+  };
+
   return (
     <div className="wrap">
+      <header className="siteHeader">
+        <span className="siteTitle">arbitration-log</span>
+      </header>
       <div
         className={`panel dropzone ${isDragOver ? "dragover" : ""}`}
         onDragOver={(e) => {
@@ -325,7 +379,21 @@ export default function Page() {
             {progress != null ? (
               <span className="warnTag">{Math.round(progress * 100)}%</span>
             ) : null}
-            {error ? <span className="err">解析失败</span> : null}
+            {error ? (
+              <span className="err" title={error}>
+                解析失败：{error}
+              </span>
+            ) : null}
+            {parse?.readComplete === false ? (
+              <span
+                className="warnTag"
+                title={`${parse.readStopReason ?? "读取未完成"}（已读取 ${Math.round(
+                  (parse.readProgress01 ?? 0) * 100
+                )}%）`}
+              >
+                未读完 {Math.round((parse.readProgress01 ?? 0) * 100)}%
+              </span>
+            ) : null}
             {visibleMissions.some((m) => m.status === "incomplete") ? (
               <span className="warnTag">incomplete</span>
             ) : null}
@@ -364,7 +432,8 @@ export default function Page() {
                           setManualHmsByIdx({});
                           setActualEssenceByIdx({});
                         } else if (lastFileRef.current) {
-                          void handleFile(lastFileRef.current, clamped);
+                          // 保留当前展示，后台重解析补齐到 clamped
+                          void handleFile(lastFileRef.current, clamped, { preserveExisting: true });
                         }
               }}
               disabled={!lastFileRef.current || progress != null}
@@ -460,12 +529,17 @@ export default function Page() {
                     ? "轮次"
                     : "阶段";
               return (
-                <div key={idx} className="runBlock">
+                <div
+                  key={idx}
+                  className="runBlock"
+                  ref={(el) => { runRefs.current[idx] = el; }}
+                >
                   <div className="runHeader">
-                    <div className="runTitle" aria-label={`最近有效第 ${idx + 1} 次`}>
+                    <div className="runLeft">
                       <span className="runIndex">{String(idx + 1).padStart(2, "0")}</span>
+                      <span className="runSub">{nodeInfoLine(m) || "-"}</span>
                     </div>
-                    <div className="runSub">{nodeInfoLine(m) || "-"}</div>
+                    <div className={`gradeBadge ${gradeCssClass(grade)}`}>{grade}</div>
                   </div>
                   <div className="metricsBig">
                     <div className="metric metricA">
@@ -477,7 +551,7 @@ export default function Page() {
                       <div className="metricValue">{metrics.enemySpawned ?? "-"}</div>
                     </div>
                     <div className="metric metricC">
-                      <div className="metricLabel">无人机生成/分钟</div>
+                      <div className="metricLabel">无人机/分钟</div>
                       <div className="metricValue">{formatPerMin(dronesPerMin)}</div>
                     </div>
                     <div className="metric metricD">
@@ -591,10 +665,16 @@ export default function Page() {
                         <div className={`miniValue ${diffClass}`}>{diffText}</div>
                       </div>
                     ) : null}
-                    <div className="mini">
-                      <div className="miniLabel">评级</div>
-                      <div className="miniValue">{grade}</div>
-                    </div>
+                  </div>
+
+                  <div className="runFooter">
+                    <button
+                      className={`screenshotBtn${copyingIdx === idx ? " copying" : ""}`}
+                      onClick={() => void captureRun(idx)}
+                      disabled={copyingIdx === idx}
+                    >
+                      {copyingIdx === idx ? "已复制 ✓" : "截图"}
+                    </button>
                   </div>
 
                   <details className="detail">
