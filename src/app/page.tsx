@@ -309,33 +309,44 @@ export default function Page() {
     if (!el) return;
     setCopyingIdx(idx);
     try {
+      // wait for fonts to finish loading so text renders correctly
+      await document.fonts.ready;
       const { default: html2canvas } = await import("html2canvas");
+      // pick background color matching current theme
+      const bgColor =
+        theme === "b" ? "#0d1c30" : theme === "c" ? "#18140f" : "#fffefb";
       const canvas = await html2canvas(el, {
-        backgroundColor: "#ffffff",
+        backgroundColor: bgColor,
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         logging: false,
       });
       await new Promise<void>((resolve) => {
-        canvas.toBlob(async (blob) => {
+        canvas.toBlob((blob) => {
           if (blob) {
-            try {
-              await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            } catch {
-              // clipboard API not available – fallback to download
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `arbitration-${String(idx + 1).padStart(2, "0")}.png`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }
+            const url = URL.createObjectURL(blob);
+            // try clipboard first, fall back to download
+            navigator.clipboard
+              .write([new ClipboardItem({ "image/png": blob })])
+              .catch(() => {
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `arbitration-${String(idx + 1).padStart(2, "0")}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              })
+              .finally(() => {
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+              });
           }
           resolve();
         }, "image/png");
       });
-    } catch {
-      // ignore
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`截图失败：${msg}`);
     } finally {
       setTimeout(() => setCopyingIdx(null), 1600);
     }
