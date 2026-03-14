@@ -106,7 +106,7 @@ export default function Page() {
   const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
 
   // ── theme ──
-  const [theme, setThemeState] = useState<Theme>("b");
+  const [theme, setThemeState] = useState<Theme>("e");
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
   // load from localStorage on mount
@@ -114,7 +114,7 @@ export default function Page() {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
     if (saved && (saved === "b" || saved === "c" || saved === "e")) {
       setThemeState(saved);
-      if (saved === "b") {
+      if (saved === "e") {
         document.documentElement.removeAttribute("data-theme");
       } else {
         document.documentElement.setAttribute("data-theme", saved);
@@ -126,7 +126,7 @@ export default function Page() {
     setThemeState(t);
     setShowThemeMenu(false);
     localStorage.setItem(THEME_STORAGE_KEY, t);
-    if (t === "b") {
+    if (t === "e") {
       document.documentElement.removeAttribute("data-theme");
     } else {
       document.documentElement.setAttribute("data-theme", t);
