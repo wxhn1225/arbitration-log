@@ -98,6 +98,7 @@ export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const lastFileRef = useRef<File | null>(null);
   const runRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const captureRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
@@ -272,7 +273,7 @@ export default function Page() {
   };
 
   const captureRun = async (idx: number) => {
-    const el = runRefs.current[idx];
+    const el = captureRefs.current[idx];
     if (!el) return;
     setCopyingIdx(idx);
     try {
@@ -534,6 +535,10 @@ export default function Page() {
                   className="runBlock"
                   ref={(el) => { runRefs.current[idx] = el; }}
                 >
+                  <div
+                    className="runCapture"
+                    ref={(el) => { captureRefs.current[idx] = el; }}
+                  >
                   <div className="runHeader">
                     <div className="runLeft">
                       <span className="runIndex">{String(idx + 1).padStart(2, "0")}</span>
@@ -666,6 +671,8 @@ export default function Page() {
                       </div>
                     ) : null}
                   </div>
+
+                  </div>{/* /runCapture */}
 
                   <div className="runFooter">
                     <button
