@@ -278,7 +278,7 @@ export default function Page() {
     try {
       const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(el, {
-        backgroundColor: "#0d0e17",
+        backgroundColor: "#ffffff",
         scale: 2,
         useCORS: true,
         logging: false,
