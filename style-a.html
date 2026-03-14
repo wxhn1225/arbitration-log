@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Style A · 深雾暗色（丝滑感）</title>
+<style>
+/* ── Style A：深雾 · 暗色 · 丝滑玻璃感 ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root{
+  --bg0:#0b0c12;
+  --bg1:#0e0f18;
+  --glass:rgba(255,255,255,0.055);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.10);
+  --border2:rgba(255,255,255,0.18);
+  --text:#eef0f8;
+  --muted:rgba(238,240,248,0.52);
+  --accent:#818cf8;   /* indigo */
+  --shadow:0 1px 0 rgba(255,255,255,0.06) inset,
+           0 20px 60px rgba(0,0,0,0.5),
+           0 4px 16px rgba(0,0,0,0.3);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Inter',ui-sans-serif,system-ui,sans-serif;
+  background:var(--bg0);
+  background-image:
+    radial-gradient(ellipse 1200px 800px at 10% -10%, rgba(99,102,241,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 800px 600px at 90% 110%, rgba(139,92,246,0.09) 0%, transparent 55%);
+  color:var(--text);
+  min-height:100vh;
+  padding:40px 20px;
+  -webkit-font-smoothing:antialiased;
+}
+h2{font-size:13px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:24px;text-align:center;opacity:.7}
+
+.wrap{max-width:760px;margin:0 auto}
+
+/* title */
+.site-title{
+  font-size:22px;font-weight:800;letter-spacing:-.3px;
+  background:linear-gradient(135deg,#a5b4fc,#818cf8);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:32px;display:inline-block;
+}
+
+/* card */
+.card{
+  background:var(--glass);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:22px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  transition:border-color .2s,box-shadow .2s;
+}
+.card:hover{
+  border-color:var(--border2);
+  box-shadow:0 1px 0 rgba(255,255,255,0.08) inset,0 24px 80px rgba(0,0,0,0.55),0 6px 20px rgba(0,0,0,0.35);
+}
+
+/* run header */
+.run-header{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;
+}
+.run-left{display:flex;align-items:center;gap:10px}
+.run-idx{
+  height:28px;min-width:44px;padding:0 11px;border-radius:999px;
+  font-size:12px;font-weight:800;letter-spacing:1.2px;
+  color:var(--accent);border:1.5px solid rgba(129,140,248,.35);
+  background:rgba(129,140,248,.10);display:inline-flex;align-items:center;justify-content:center;
+}
+.run-sub{font-size:14px;font-weight:500;color:var(--muted)}
+
+/* grade badges */
+.grade{
+  width:54px;height:54px;border-radius:14px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:26px;font-weight:900;position:relative;overflow:hidden;flex-shrink:0;
+}
+.grade-f   {color:rgba(238,240,248,.3);background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.09)}
+.grade-am  {color:#4ade80;background:rgba(74,222,128,.08);border:1.5px solid rgba(74,222,128,.22);box-shadow:0 0 18px rgba(74,222,128,.14)}
+.grade-a   {color:#60a5fa;background:rgba(96,165,250,.08);border:1.5px solid rgba(96,165,250,.26);
+            box-shadow:0 0 22px rgba(96,165,250,.18);animation:ab 3.5s ease-in-out infinite}
+.grade-ap  {color:#c084fc;background:rgba(192,132,252,.10);border:1.5px solid rgba(192,132,252,.30);
+            box-shadow:0 0 28px rgba(192,132,252,.22);animation:aplus 2s ease-in-out infinite}
+.grade-s   {color:#fbbf24;background:linear-gradient(135deg,rgba(245,158,11,.18),rgba(251,191,36,.08));
+            border:2px solid rgba(251,191,36,.45);box-shadow:0 0 0 4px rgba(245,158,11,.08),0 0 36px rgba(245,158,11,.35);
+            animation:sglow 1.6s ease-in-out infinite}
+.grade-s::before{content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 35%,rgba(255,252,180,.55) 50%,transparent 65%);
+  animation:sweep 1.9s linear infinite}
+@keyframes ab    {0%,100%{box-shadow:0 0 22px rgba(96,165,250,.16)}50%{box-shadow:0 0 34px rgba(96,165,250,.32)}}
+@keyframes aplus {0%,100%{box-shadow:0 0 28px rgba(192,132,252,.20);transform:scale(1)}50%{box-shadow:0 0 44px rgba(192,132,252,.40);transform:scale(1.05)}}
+@keyframes sglow {0%,100%{box-shadow:0 0 0 4px rgba(245,158,11,.08),0 0 36px rgba(245,158,11,.32)}50%{box-shadow:0 0 0 6px rgba(245,158,11,.16),0 0 56px rgba(245,158,11,.55)}}
+@keyframes sweep {0%{transform:translateX(-160%)}100%{transform:translateX(260%)}}
+
+/* big metrics */
+.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.metric{
+  border-radius:14px;padding:18px 18px 14px;
+  background:rgba(0,0,0,.20);
+  border:1px solid rgba(255,255,255,.08);
+  position:relative;overflow:hidden;
+}
+.metric::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;border-radius:14px 14px 0 0}
+.m-a::before{background:rgba(129,140,248,.55)}
+.m-b::before{background:rgba(96,165,250,.50)}
+.m-c::before{background:rgba(192,132,252,.45)}
+.m-d::before{background:rgba(251,191,36,.45)}
+.metric-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:1px}
+.metric-value{font-size:62px;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;margin-top:8px;line-height:1.02;color:var(--text)}
+
+/* small */
+.smalls{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.mini{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;background:rgba(0,0,0,.12)}
+.mini-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.mini-value{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);margin-top:4px}
+
+/* note */
+.note{text-align:center;margin-top:16px;font-size:12px;color:var(--muted);opacity:.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="site-title">arbitration-log</div>
+  <h2>Style A · 深雾暗色 · 丝滑玻璃感（偏技术风）</h2>
+
+  <div class="card">
+    <div class="run-header">
+      <div class="run-left">
+        <span class="run-idx">01</span>
+        <span class="run-sub">Casta · 谷神星 · 防御 · Grineer</span>
+      </div>
+      <div class="grade grade-am">A-</div>
+    </div>
+    <div class="metrics">
+      <div class="metric m-a"><div class="metric-label">无人机生成</div><div class="metric-value">1584</div></div>
+      <div class="metric m-b"><div class="metric-label">敌人生成</div><div class="metric-value">8441</div></div>
+      <div class="metric m-c"><div class="metric-label">无人机/分钟</div><div class="metric-value">25.45</div></div>
+      <div class="metric m-d"><div class="metric-label">总时间</div><div class="metric-value">1h 2m</div></div>
+    </div>
+    <div class="smalls">
+      <div class="mini"><div class="mini-label">波次</div><div class="mini-value">123</div></div>
+      <div class="mini"><div class="mini-label">轮次</div><div class="mini-value">41</div></div>
+      <div class="mini"><div class="mini-label">期望生息</div><div class="mini-value">614.0</div></div>
+      <div class="mini"><div class="mini-label">生息/h</div><div class="mini-value">591.9</div></div>
+      <div class="mini"><div class="mini-label">生息/min</div><div class="mini-value">9.87</div></div>
+    </div>
+  </div>
+
+  <br>
+  <!-- 展示 S 级效果 -->
+  <div class="card">
+    <div class="run-header">
+      <div class="run-left">
+        <span class="run-idx">02</span>
+        <span class="run-sub">Cinxia · 谷神星 · 拦截 · Grineer</span>
+      </div>
+      <div class="grade grade-s">S</div>
+    </div>
+    <div class="metrics">
+      <div class="metric m-a"><div class="metric-label">无人机生成</div><div class="metric-value">1610</div></div>
+      <div class="metric m-b"><div class="metric-label">敌人生成</div><div class="metric-value">9227</div></div>
+      <div class="metric m-c"><div class="metric-label">无人机/分钟</div><div class="metric-value">26.07</div></div>
+      <div class="metric m-d"><div class="metric-label">总时间</div><div class="metric-value">1h 1m</div></div>
+    </div>
+  </div>
+  <p class="note">← 背景纹理滑顺、玻璃质感卡片、indigo 点缀</p>
+</div>
+</body>
+</html>

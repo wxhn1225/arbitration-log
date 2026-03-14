@@ -1,8 +1,12 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { MissionResult, ParseResult } from "../parser";
 import { parseRecentValidEeLogFromFile } from "../parser";
+
+type Theme = "b" | "c" | "e";
+const THEME_LABELS: Record<Theme, string> = { b: "深海蓝", c: "暖雾暗", e: "暖奶油" };
+const THEME_STORAGE_KEY = "arb-theme";
 
 type NodeMeta = {
   nodeId: string;
@@ -100,6 +104,34 @@ export default function Page() {
   const runRefs = useRef<Array<HTMLDivElement | null>>([]);
   const captureRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
+
+  // ── theme ──
+  const [theme, setThemeState] = useState<Theme>("b");
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+
+  // load from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+    if (saved && (saved === "b" || saved === "c" || saved === "e")) {
+      setThemeState(saved);
+      document.documentElement.setAttribute("data-theme", saved === "b" ? "" : saved);
+    }
+  }, []);
+
+  const applyTheme = (t: Theme) => {
+    setThemeState(t);
+    setShowThemeMenu(false);
+    localStorage.setItem(THEME_STORAGE_KEY, t);
+    document.documentElement.setAttribute("data-theme", t === "b" ? "" : t);
+  };
+
+  // close menu on outside click
+  useEffect(() => {
+    if (!showThemeMenu) return;
+    const handler = () => setShowThemeMenu(false);
+    document.addEventListener("click", handler, { capture: true, once: true });
+    return () => document.removeEventListener("click", handler, { capture: true });
+  }, [showThemeMenu]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +345,29 @@ export default function Page() {
     <div className="wrap">
       <header className="siteHeader">
         <span className="siteTitle">arbitration-log</span>
+        <div className="themeSwitch">
+          <button
+            className="themeSwitchBtn"
+            onClick={(e) => { e.stopPropagation(); setShowThemeMenu((v) => !v); }}
+          >
+            <span className={`themeDot tp-${theme}`} />
+            {THEME_LABELS[theme]}
+          </button>
+          {showThemeMenu && (
+            <div className="themeMenu" onClick={(e) => e.stopPropagation()}>
+              {(["b", "c", "e"] as Theme[]).map((t) => (
+                <button
+                  key={t}
+                  className={`themeOption${theme === t ? " active" : ""}`}
+                  onClick={() => applyTheme(t)}
+                >
+                  <span className={`themeDot tp-${t}`} />
+                  {THEME_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
       <div
         className={`panel dropzone ${isDragOver ? "dragover" : ""}`}
