@@ -114,7 +114,11 @@ export default function Page() {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
     if (saved && (saved === "b" || saved === "c" || saved === "e")) {
       setThemeState(saved);
-      document.documentElement.setAttribute("data-theme", saved === "b" ? "" : saved);
+      if (saved === "b") {
+        document.documentElement.removeAttribute("data-theme");
+      } else {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
     }
   }, []);
 
@@ -122,16 +126,12 @@ export default function Page() {
     setThemeState(t);
     setShowThemeMenu(false);
     localStorage.setItem(THEME_STORAGE_KEY, t);
-    document.documentElement.setAttribute("data-theme", t === "b" ? "" : t);
+    if (t === "b") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", t);
+    }
   };
-
-  // close menu on outside click
-  useEffect(() => {
-    if (!showThemeMenu) return;
-    const handler = () => setShowThemeMenu(false);
-    document.addEventListener("click", handler, { capture: true, once: true });
-    return () => document.removeEventListener("click", handler, { capture: true });
-  }, [showThemeMenu]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [parse, setParse] = useState<ParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -348,24 +348,28 @@ export default function Page() {
         <div className="themeSwitch">
           <button
             className="themeSwitchBtn"
-            onClick={(e) => { e.stopPropagation(); setShowThemeMenu((v) => !v); }}
+            onClick={() => setShowThemeMenu((v) => !v)}
           >
             <span className={`themeDot tp-${theme}`} />
             {THEME_LABELS[theme]}
+            <span className="themeSwitchArrow">▾</span>
           </button>
           {showThemeMenu && (
-            <div className="themeMenu" onClick={(e) => e.stopPropagation()}>
-              {(["b", "c", "e"] as Theme[]).map((t) => (
-                <button
-                  key={t}
-                  className={`themeOption${theme === t ? " active" : ""}`}
-                  onClick={() => applyTheme(t)}
-                >
-                  <span className={`themeDot tp-${t}`} />
-                  {THEME_LABELS[t]}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="themeBackdrop" onClick={() => setShowThemeMenu(false)} />
+              <div className="themeMenu">
+                {(["b", "c", "e"] as Theme[]).map((t) => (
+                  <button
+                    key={t}
+                    className={`themeOption${theme === t ? " active" : ""}`}
+                    onClick={() => applyTheme(t)}
+                  >
+                    <span className={`themeDot tp-${t}`} />
+                    {THEME_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </header>
