@@ -714,6 +714,15 @@ export default function Page() {
                         }
                       />
                     </label>
+                    <button
+                      className={`screenshotBtn${copyingIdx === idx ? " copying" : ""}`}
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => void captureRun(idx)}
+                      disabled={copyingIdx === idx}
+                      {...{ "data-html2canvas-ignore": "true" }}
+                    >
+                      {copyingIdx === idx ? "✓" : "截图"}
+                    </button>
                   </div>
 
                   <div className="metricsSmall">
@@ -743,16 +752,6 @@ export default function Page() {
                   </div>
 
                   </div>{/* /runCapture */}
-
-                  <div className="runFooter">
-                    <button
-                      className={`screenshotBtn${copyingIdx === idx ? " copying" : ""}`}
-                      onClick={() => void captureRun(idx)}
-                      disabled={copyingIdx === idx}
-                    >
-                      {copyingIdx === idx ? "已复制 ✓" : "截图"}
-                    </button>
-                  </div>
 
                   <details className="detail">
                     <summary>查看详细</summary>
