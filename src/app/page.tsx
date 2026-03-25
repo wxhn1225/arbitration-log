@@ -144,6 +144,7 @@ export default function Page() {
   const [timeModeByIdx, setTimeModeByIdx] = useState<Record<number, TimeMode>>({});
   const [manualHmsByIdx, setManualHmsByIdx] = useState<Record<number, ManualHms>>({});
   const [actualEssenceByIdx, setActualEssenceByIdx] = useState<Record<number, string>>({});
+  const [waveLimitByIdx, setWaveLimitByIdx] = useState<Record<number, string>>({});
   const [buffs, setBuffs] = useState<BuffState>({
     blueBox: true,
     abundant: true,
@@ -281,6 +282,7 @@ export default function Page() {
     setTimeModeByIdx({});
     setManualHmsByIdx({});
     setActualEssenceByIdx({});
+    setWaveLimitByIdx({});
     try {
       // 节点信息：按原生 ExportRegions + dict.zh.json 实时翻译（用于展示）
       // 加载失败不影响解析，只会影响节点信息展示
@@ -548,6 +550,53 @@ export default function Page() {
           ) : (
             visibleMissions.map((m, idx) => {
               const metrics = metricsFor(m);
+
+              // ── 自定义波数上限 ──
+              const waveLimitStr = waveLimitByIdx[idx] ?? "";
+              const waveLimitNum = waveLimitStr.trim() !== "" ? Math.max(1, Math.floor(Number(waveLimitStr))) : null;
+              const hasPhases = Array.isArray(m.phases) && m.phases.length > 0;
+              const canFilterWaves = hasPhases && waveLimitNum != null;
+
+              // 过滤阶段列表（用于详细表格）
+              const filteredPhases = canFilterWaves
+                ? m.phases!.filter((p) => p.index <= waveLimitNum!)
+                : (m.phases ?? []);
+
+              // 重新计算因波数过滤而变化的指标
+              const filteredDrones = canFilterWaves
+                ? filteredPhases.reduce((s, p) => s + p.shieldDroneCount, 0)
+                : metrics.drones;
+              const filteredWaveCount = canFilterWaves && m.missionKind === "defense"
+                ? Math.min(waveLimitNum!, metrics.waveCount ?? waveLimitNum!)
+                : metrics.waveCount;
+              const filteredRoundCount = canFilterWaves
+                ? m.missionKind === "defense"
+                  ? Math.floor((filteredWaveCount ?? 0) / 3)
+                  : filteredPhases.length
+                : metrics.roundCount;
+
+              // 重新计算期望生息
+              const filteredExpectedFromDrones =
+                filteredDrones != null ? filteredDrones * BASE_DROP * mul : undefined;
+              const filteredExpectedFromRounds =
+                filteredRoundCount != null
+                  ? filteredRoundCount * (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT)
+                  : undefined;
+              const filteredExpectedTotal =
+                filteredExpectedFromDrones != null && filteredExpectedFromRounds != null
+                  ? filteredExpectedFromDrones + filteredExpectedFromRounds
+                  : filteredExpectedFromDrones ?? filteredExpectedFromRounds;
+              const fullMulConst = 2 * 1.18 * 2 * 1.25;
+              const filteredFullExpected =
+                filteredDrones != null && filteredRoundCount != null
+                  ? filteredDrones * BASE_DROP * fullMulConst +
+                    filteredRoundCount * (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT)
+                  : filteredDrones != null
+                    ? filteredDrones * BASE_DROP * fullMulConst
+                    : filteredRoundCount != null
+                      ? filteredRoundCount * (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT)
+                      : undefined;
+
               const timeMode = timeModeByIdx[idx] ?? "host";
               const manual = manualHmsByIdx[idx] ?? { h: "", m: "", s: "" };
               const mh = Number(manual.h);
@@ -566,29 +615,29 @@ export default function Page() {
                       ? manualSec
                       : metrics.hostTotalSec;
               const dronesPerMin =
-                metrics.drones != null && selectedSec != null && selectedSec > 0
-                  ? metrics.drones / (selectedSec / 60)
+                filteredDrones != null && selectedSec != null && selectedSec > 0
+                  ? filteredDrones / (selectedSec / 60)
                   : undefined;
               const expectedPerHour =
-                metrics.expectedTotal != null && selectedSec != null && selectedSec > 0
-                  ? (metrics.expectedTotal * 3600) / selectedSec
+                filteredExpectedTotal != null && selectedSec != null && selectedSec > 0
+                  ? (filteredExpectedTotal * 3600) / selectedSec
                   : undefined;
               const expectedPerMin =
-                metrics.expectedTotal != null && selectedSec != null && selectedSec > 0
-                  ? (metrics.expectedTotal * 60) / selectedSec
+                filteredExpectedTotal != null && selectedSec != null && selectedSec > 0
+                  ? (filteredExpectedTotal * 60) / selectedSec
                   : undefined;
               const fullExpectedPerHour =
-                metrics.fullExpectedTotal != null && selectedSec != null && selectedSec > 0
-                  ? (metrics.fullExpectedTotal * 3600) / selectedSec
+                filteredFullExpected != null && selectedSec != null && selectedSec > 0
+                  ? (filteredFullExpected * 3600) / selectedSec
                   : undefined;
               const grade = gradeFor(fullExpectedPerHour);
               const actualText = actualEssenceByIdx[idx] ?? "";
               const actualEssence = Number(actualText);
               const diffPct =
                 Number.isFinite(actualEssence) &&
-                metrics.expectedTotal != null &&
-                metrics.expectedTotal > 0
-                  ? ((actualEssence - metrics.expectedTotal) / metrics.expectedTotal) * 100
+                filteredExpectedTotal != null &&
+                filteredExpectedTotal > 0
+                  ? ((actualEssence - filteredExpectedTotal) / filteredExpectedTotal) * 100
                   : undefined;
               const diffClass =
                 diffPct != null ? (diffPct > 0 ? "diffPos" : diffPct < 0 ? "diffNeg" : "diffFlat") : "";
@@ -619,7 +668,7 @@ export default function Page() {
                   <div className="metricsBig">
                     <div className="metric metricA">
                       <div className="metricLabel">无人机生成</div>
-                      <div className="metricValue">{metrics.drones ?? "-"}</div>
+                      <div className="metricValue">{filteredDrones ?? "-"}</div>
                     </div>
                     <div className="metric metricB">
                       <div className="metricLabel">敌人生成</div>
@@ -726,17 +775,29 @@ export default function Page() {
                   </div>
 
                   <div className="metricsSmall">
-                    <div className="mini">
-                      <div className="miniLabel">波次</div>
-                      <div className="miniValue">{metrics.waveCount ?? "-"}</div>
-                    </div>
+                    {m.missionKind === "defense" ? (
+                      <div className="mini">
+                        <div className="miniLabel">波次</div>
+                        <div className="miniValue">
+                          {filteredWaveCount ?? "-"}
+                          {canFilterWaves && metrics.waveCount != null && filteredWaveCount !== metrics.waveCount
+                            ? <span className="miniFiltered">/{metrics.waveCount}</span>
+                            : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mini">
                       <div className="miniLabel">轮次</div>
-                      <div className="miniValue">{metrics.roundCount ?? "-"}</div>
+                      <div className="miniValue">
+                        {filteredRoundCount ?? "-"}
+                        {canFilterWaves && metrics.roundCount != null && filteredRoundCount !== metrics.roundCount
+                          ? <span className="miniFiltered">/{metrics.roundCount}</span>
+                          : null}
+                      </div>
                     </div>
                     <div className="mini">
                       <div className="miniLabel">期望生息</div>
-                      <div className="miniValue">{formatNumber(metrics.expectedTotal, 3)}</div>
+                      <div className="miniValue">{formatNumber(filteredExpectedTotal, 3)}</div>
                     </div>
                     <div className="mini miniDual">
                       <div className="miniLabel">生息速率</div>
@@ -751,6 +812,38 @@ export default function Page() {
                     ) : null}
                   </div>
 
+                  {/* 波数上限过滤（仅当有 phases 时显示） */}
+                  {hasPhases ? (
+                    <div className="waveFilterBar" {...{ "data-html2canvas-ignore": "true" }}>
+                      <span className="waveFilterLabel">
+                        {m.missionKind === "interception" ? "轮次上限" : "波数上限"}
+                      </span>
+                      <input
+                        className="waveFilterInput"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max={m.phases!.length}
+                        placeholder={String(m.phases!.length)}
+                        value={waveLimitStr}
+                        onChange={(e) =>
+                          setWaveLimitByIdx((s) => ({ ...s, [idx]: e.target.value }))
+                        }
+                      />
+                      <span className="waveFilterHint">
+                        共 {m.phases!.length} {m.missionKind === "interception" ? "轮" : "波"}
+                      </span>
+                      {waveLimitStr.trim() ? (
+                        <button
+                          className="waveFilterClear"
+                          onClick={() => setWaveLimitByIdx((s) => ({ ...s, [idx]: "" }))}
+                        >
+                          清除
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   </div>{/* /runCapture */}
 
                   <details className="detail">
@@ -761,22 +854,22 @@ export default function Page() {
                           <div className="k">{phaseLabel}</div>
                           <div className="v">
                             {m.missionKind === "defense"
-                              ? `${metrics.waveCount ?? "-"} 波 / ${metrics.roundCount ?? "-"} 轮（每 3 波 1 轮）`
+                              ? `${filteredWaveCount ?? "-"} 波 / ${filteredRoundCount ?? "-"} 轮（每 3 波 1 轮）${canFilterWaves ? `（已截取前 ${waveLimitNum} 波）` : ""}`
                               : m.missionKind === "interception"
-                                ? `${metrics.roundCount ?? "-"} 轮（每轮 = 1 轮次）`
+                                ? `${filteredRoundCount ?? "-"} 轮（每轮 = 1 轮次）${canFilterWaves ? `（已截取前 ${waveLimitNum} 轮）` : ""}`
                                 : "-"}
                           </div>
                         </div>
                         <div className="kv">
                           <div className="k">轮次奖励期望</div>
                           <div className="v">
-                            {metrics.roundCount != null
+                            {filteredRoundCount != null
                               ? `${formatNumber(
-                                  metrics.roundCount *
+                                  filteredRoundCount *
                                     (1 + EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT),
                                   3
-                                )}（保底 ${metrics.roundCount} + 额外期望 ${formatNumber(
-                                  metrics.roundCount *
+                                )}（保底 ${filteredRoundCount} + 额外期望 ${formatNumber(
+                                  filteredRoundCount *
                                     (EXTRA_PER_ROUND_PROB * EXTRA_PER_ROUND_AMOUNT),
                                   3
                                 )}）`
@@ -789,14 +882,14 @@ export default function Page() {
                         </div>
                       </div>
 
-                      {Array.isArray(m.phases) && m.phases.length ? (
+                      {filteredPhases.length > 0 ? (
                         <div className="phaseTable">
                           <div className="phaseRow phaseHead">
                             <div className="c1">{phaseLabel}</div>
                             <div className="c2">无人机生成</div>
                             <div className="c3">无人机期望生息</div>
                           </div>
-                          {m.phases.map((p) => {
+                          {filteredPhases.map((p) => {
                             const expected = p.shieldDroneCount * BASE_DROP * mul;
                             const label =
                               p.kind === "wave"
