@@ -648,36 +648,6 @@ input[type="file"] { display: none; }
 .miniValue.diffFlat { color: var(--muted); }
 .miniDual .miniSub  { margin-top: 4px; font-size: 14px; font-weight: 800; color: var(--text2); font-variant-numeric: tabular-nums; line-height: 1.4; }
 
-/* ═══════════════════════════════════════════════════════════
-   Wave filter bar
-═══════════════════════════════════════════════════════════ */
-.waveFilterBar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin: 0 18px 14px; padding: 9px 14px; border-radius: 16px;
-  border: 1px dashed var(--ink-border); background: var(--ink-bg);
-}
-.waveFilterLabel {
-  font-size: 13px; font-weight: 700; color: var(--ink-text); white-space: nowrap;
-}
-.waveFilterInput {
-  width: 72px; height: 28px; border: 1px solid var(--ink-border); border-radius: 8px;
-  background: var(--panel-bg); color: var(--text);
-  padding: 0 8px; font-size: 13px; font-family: inherit; outline: none;
-  font-weight: 700;
-}
-.waveFilterInput:focus { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink-bg); }
-.waveFilterHint { font-size: 12px; color: var(--muted); }
-.waveFilterClear {
-  margin-left: 2px; padding: 4px 11px; border-radius: 999px;
-  border: 1px solid var(--ink-border); background: transparent;
-  color: var(--ink-text); font-size: 12px; font-weight: 700;
-  cursor: pointer; font-family: inherit; transition: all .12s;
-}
-.waveFilterClear:hover { background: var(--ink); color: #fff; }
-
-/* small "slash total" annotation in miniValue */
-.miniFiltered { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 2px; }
-
 .screenshotBtn {
   flex-shrink: 0;
   font-size: 12px; padding: 5px 14px; border-radius: 999px;
