@@ -793,23 +793,35 @@ export default function Page() {
                         <div className="phaseTable">
                           <div className="phaseRow phaseHead">
                             <div className="c1">{phaseLabel}</div>
-                            <div className="c2">无人机生成</div>
-                            <div className="c3">无人机期望生息</div>
+                            <div className="c2">无人机生成（总）</div>
+                            <div className="c3">无人机期望生息（总）</div>
                           </div>
-                          {m.phases.map((p) => {
-                            const expected = p.shieldDroneCount * BASE_DROP * mul;
-                            const label =
-                              p.kind === "wave"
-                                ? `第 ${p.index} 波（第 ${Math.ceil(p.index / 3)} 轮）`
-                                : `第 ${p.index} 轮`;
-                            return (
-                              <div key={`${p.kind}-${p.index}`} className="phaseRow">
-                                <div className="c1">{label}</div>
-                                <div className="c2">{p.shieldDroneCount}</div>
-                                <div className="c3">{formatNumber(expected, 3)}</div>
-                              </div>
-                            );
-                          })}
+                          {(() => {
+                            let cumDrones = 0;
+                            let cumExpected = 0;
+                            return m.phases.map((p) => {
+                              cumDrones += p.shieldDroneCount;
+                              const perExpected = p.shieldDroneCount * BASE_DROP * mul;
+                              cumExpected += perExpected;
+                              const label =
+                                p.kind === "wave"
+                                  ? `第 ${p.index} 波（第 ${Math.ceil(p.index / 3)} 轮）`
+                                  : `第 ${p.index} 轮`;
+                              return (
+                                <div key={`${p.kind}-${p.index}`} className="phaseRow">
+                                  <div className="c1">{label}</div>
+                                  <div className="c2">
+                                    {p.shieldDroneCount}
+                                    <span className="phaseCum">（{cumDrones}）</span>
+                                  </div>
+                                  <div className="c3">
+                                    {formatNumber(perExpected, 3)}
+                                    <span className="phaseCum">（{formatNumber(cumExpected, 0)}）</span>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       ) : (
                         <div className="detailEmpty">该把日志段内未识别到 {phaseLabel} 标记</div>
