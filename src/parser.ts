@@ -155,6 +155,9 @@ export async function parseRecentValidEeLogFromFile(
     pendingDronesBeforeFirstRoundMarker: number;
     waveCount?: number;
     roundCount?: number;
+    // 镜像防御 LoopDefend 波次归零检测
+    loopDefendLastWave?: number;   // 上次见到的波次编号
+    loopDefendOffset?: number;     // 累计偏移（每次归零加上上次最大值）
   };
 
   let cur: Run | null = null;
@@ -191,16 +194,23 @@ export async function parseRecentValidEeLogFromFile(
       if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
     } else if (run.missionKind === "mirrorDefense") {
       if (run.phaseKind === "wave") {
-        // 有 LoopDefend 单波标记：按波统计，每 2 波 1 轮
-        const waveCount = run.waveCount ?? (run.phases.length ? run.phases.length : undefined);
-        run.waveCount = waveCount;
-        // roundCount 优先用 TransitionOut 计数（更准确），否则估算
+        // 有 LoopDefend 单波标记：waveCount 直接来自 LoopDefend 计数（归零假事件已在 feedLine 跳过）
         if ((run.interCompletedRounds ?? 0) > 0) {
           run.roundCount = run.interCompletedRounds;
+          // waveCount 以 LoopDefend 为准；若未记录则退而用 phases 长度
+          if (run.waveCount == null) {
+            run.waveCount = run.phases.length > 0 ? run.phases.length : undefined;
+          }
         } else {
+          // 无 TransitionOut：用 LoopDefend 波次推算轮次
+          const waveCount = run.waveCount ?? (run.phases.length > 0 ? run.phases.length : undefined);
+          run.waveCount = waveCount;
           run.roundCount = waveCount != null ? Math.ceil(waveCount / 2) : undefined;
         }
-        if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
+        // 裁剪 phases，确保与 waveCount 一致
+        if (run.waveCount != null && run.phases.length > run.waveCount) {
+          run.phases.length = run.waveCount;
+        }
       } else {
         // 无 LoopDefend 标记（旧日志）：按 TransitionOut 轮次统计，波数 = 轮数 × 2
         run.phaseKind = "round";
@@ -291,6 +301,8 @@ export async function parseRecentValidEeLogFromFile(
         interHasTransmissionMarker: false,
         pendingDronesBeforeFirstRoundMarker: 0,
         loadLevelSentFirstByPlayer: {},
+        loopDefendLastWave: 0,
+        loopDefendOffset: 0,
       };
       if (voteNode?.[1]) cur.nodeId = voteNode[1];
       return;
@@ -384,10 +396,21 @@ export async function parseRecentValidEeLogFromFile(
         if (mlw) {
           const w = Number(mlw[1]);
           if (Number.isFinite(w) && w > 0) {
-            cur.phaseKind = "wave";
-            cur.curPhaseIndex = w;
-            cur.waveCount = Math.max(cur.waveCount ?? 0, w);
-            while (cur.phases.length < w) cur.phases.push(0);
+            if ((cur.loopDefendLastWave ?? 0) > 0 && w < (cur.loopDefendLastWave ?? 0)) {
+              // LoopDefend 脚本 buffer 循环归零（如 29→1）。
+              // 归零时的 "wave 1" 是脚本内部计数器重置事件，不是真实波次生成。
+              // 将 offset 设为 lastWave-1，使下一条真实标记（wave 2）= 正确的累计波次。
+              cur.loopDefendOffset = (cur.loopDefendOffset ?? 0) + (cur.loopDefendLastWave ?? 0) - 1;
+              cur.loopDefendLastWave = w;
+              // 跳过此归零标记，不更新 phase
+            } else {
+              cur.loopDefendLastWave = w;
+              const actualWave = (cur.loopDefendOffset ?? 0) + w;
+              cur.phaseKind = "wave";
+              cur.curPhaseIndex = actualWave;
+              cur.waveCount = actualWave;
+              while (cur.phases.length < actualWave) cur.phases.push(0);
+            }
           }
         }
       }
@@ -401,7 +424,7 @@ export async function parseRecentValidEeLogFromFile(
             cur.missionKind = "defense";
             cur.phaseKind = "wave";
             cur.curPhaseIndex = w;
-            cur.waveCount = Math.max(cur.waveCount ?? 0, w);
+            cur.waveCount = w;
             while (cur.phases.length < w) cur.phases.push(0);
           }
         }
