@@ -752,16 +752,29 @@ export default function Page() {
                         <div className="kv">
                           <div className="k">{phaseLabel}</div>
                           <div className="v">
-                            {m.phases?.[0]?.kind === "wave"
-                              ? `${metrics.waveCount ?? "-"} 波 / ${metrics.roundCount ?? "-"} 轮（每 3 波 1 轮）`
-                              : m.phases?.[0]?.kind === "round" &&
+                            {(() => {
+                              const wpr =
+                                metrics.waveCount != null &&
+                                metrics.roundCount != null &&
+                                metrics.roundCount > 0
+                                  ? Math.round(metrics.waveCount / metrics.roundCount)
+                                  : 3;
+                              if (m.phases?.[0]?.kind === "wave") {
+                                return `${metrics.waveCount ?? "-"} 波 / ${metrics.roundCount ?? "-"} 轮（每 ${wpr} 波 1 轮）`;
+                              }
+                              if (
+                                m.phases?.[0]?.kind === "round" &&
                                 metrics.waveCount != null &&
                                 metrics.roundCount != null &&
                                 metrics.waveCount > metrics.roundCount
-                                ? `${metrics.waveCount} 波 / ${metrics.roundCount} 轮（每 2 波 1 轮）`
-                                : m.phases?.[0]?.kind === "round"
-                                  ? `${metrics.roundCount ?? "-"} 轮`
-                                  : "-"}
+                              ) {
+                                return `${metrics.waveCount} 波 / ${metrics.roundCount} 轮（每 2 波 1 轮）`;
+                              }
+                              if (m.phases?.[0]?.kind === "round") {
+                                return `${metrics.roundCount ?? "-"} 轮`;
+                              }
+                              return "-";
+                            })()}
                           </div>
                         </div>
                         <div className="kv">
@@ -800,14 +813,23 @@ export default function Page() {
                               cumDrones += p.shieldDroneCount;
                               const perExpected = p.shieldDroneCount * BASE_DROP * mul;
                               cumExpected += perExpected;
-                              const isMirrorDefense =
+                              // 每轮波数：普通防御=3，镜像防御=2；用比值动态推算
+                              const wavesPerRound =
+                                metrics.waveCount != null &&
+                                metrics.roundCount != null &&
+                                metrics.roundCount > 0
+                                  ? Math.round(metrics.waveCount / metrics.roundCount)
+                                  : 3;
+                              // 轮次模式下 waveCount > roundCount 表示镜像防御降级（无单波标记）
+                              const isMirrorRoundMode =
+                                p.kind === "round" &&
                                 metrics.waveCount != null &&
                                 metrics.roundCount != null &&
                                 metrics.waveCount > metrics.roundCount;
                               const label =
                                 p.kind === "wave"
-                                  ? `第 ${p.index} 波（第 ${Math.ceil(p.index / 3)} 轮）`
-                                  : isMirrorDefense
+                                  ? `第 ${p.index} 波（第 ${Math.ceil(p.index / wavesPerRound)} 轮）`
+                                  : isMirrorRoundMode
                                     ? `第 ${p.index} 轮（第 ${p.index * 2 - 1}–${p.index * 2} 波）`
                                     : `第 ${p.index} 轮`;
                               return (

@@ -87,6 +87,9 @@ const reDefenseRewardTransitionOut =
 const reLevelOverrideMirrorDefense =
   /levelOverride=\/Lotus\/Levels\/Proc\/LastWish\/LastWishDefense\b/;
 
+// 镜像防御单波标记（与普通防御的 WaveDefend.lua 不同）
+const reLoopDefenseWave = /Script \[Info\]: LoopDefend\.lua: Loop Defense wave:\s*(\d+)\b/;
+
 // ---- 工具函数 ----------------------------------------------------------------
 
 function parseTime(line: string): number | undefined {
@@ -187,18 +190,31 @@ export async function parseRecentValidEeLogFromFile(
       run.phaseKind = "wave";
       if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
     } else if (run.missionKind === "mirrorDefense") {
-      // 镜像防御：每 2 波触发一次 TransitionOut，波数 = 轮数 × 2
-      run.phaseKind = "round";
-      const completed = run.interCompletedRounds ?? 0;
-      if (completed > 0) {
-        run.roundCount = completed;
-      } else if (run.roundCount == null) {
-        if (run.phases.length > 0) run.roundCount = run.phases.length;
-        else if (run.pendingDronesBeforeFirstRoundMarker > 0) run.roundCount = 1;
-      }
-      run.waveCount = run.roundCount != null ? run.roundCount * 2 : undefined;
-      if (run.roundCount != null && run.phases.length > run.roundCount) {
-        run.phases.length = run.roundCount;
+      if (run.phaseKind === "wave") {
+        // 有 LoopDefend 单波标记：按波统计，每 2 波 1 轮
+        const waveCount = run.waveCount ?? (run.phases.length ? run.phases.length : undefined);
+        run.waveCount = waveCount;
+        // roundCount 优先用 TransitionOut 计数（更准确），否则估算
+        if ((run.interCompletedRounds ?? 0) > 0) {
+          run.roundCount = run.interCompletedRounds;
+        } else {
+          run.roundCount = waveCount != null ? Math.ceil(waveCount / 2) : undefined;
+        }
+        if (waveCount != null && run.phases.length > waveCount) run.phases.length = waveCount;
+      } else {
+        // 无 LoopDefend 标记（旧日志）：按 TransitionOut 轮次统计，波数 = 轮数 × 2
+        run.phaseKind = "round";
+        const completed = run.interCompletedRounds ?? 0;
+        if (completed > 0) {
+          run.roundCount = completed;
+        } else if (run.roundCount == null) {
+          if (run.phases.length > 0) run.roundCount = run.phases.length;
+          else if (run.pendingDronesBeforeFirstRoundMarker > 0) run.roundCount = 1;
+        }
+        run.waveCount = run.roundCount != null ? run.roundCount * 2 : undefined;
+        if (run.roundCount != null && run.phases.length > run.roundCount) {
+          run.phases.length = run.roundCount;
+        }
       }
     } else if (run.missionKind === "interception") {
       run.phaseKind = "round";
@@ -360,20 +376,38 @@ export async function parseRecentValidEeLogFromFile(
       }
     }
 
-    // 防御波次 / 拦截轮次 / 镜像防御轮次 标记
+    // 防御波次 / 镜像防御波次 / 拦截轮次 标记
     if (afterStarted) {
-      const mw = line.match(reDefenseWave);
-      if (mw) {
-        const w = Number(mw[1]);
-        if (Number.isFinite(w) && w > 0) {
-          cur.missionKind = "defense";
-          cur.phaseKind = "wave";
-          cur.curPhaseIndex = w;
-          cur.waveCount = Math.max(cur.waveCount ?? 0, w);
-          while (cur.phases.length < w) cur.phases.push(0);
+      // 镜像防御：单波标记（优先于 TransitionOut）
+      if (cur.missionKind === "mirrorDefense") {
+        const mlw = line.match(reLoopDefenseWave);
+        if (mlw) {
+          const w = Number(mlw[1]);
+          if (Number.isFinite(w) && w > 0) {
+            cur.phaseKind = "wave";
+            cur.curPhaseIndex = w;
+            cur.waveCount = Math.max(cur.waveCount ?? 0, w);
+            while (cur.phases.length < w) cur.phases.push(0);
+          }
         }
       }
 
+      // 普通防御：单波标记
+      if (cur.missionKind !== "mirrorDefense") {
+        const mw = line.match(reDefenseWave);
+        if (mw) {
+          const w = Number(mw[1]);
+          if (Number.isFinite(w) && w > 0) {
+            cur.missionKind = "defense";
+            cur.phaseKind = "wave";
+            cur.curPhaseIndex = w;
+            cur.waveCount = Math.max(cur.waveCount ?? 0, w);
+            while (cur.phases.length < w) cur.phases.push(0);
+          }
+        }
+      }
+
+      // 拦截：轮次播报
       if (reInterceptionNewRound.test(line)) {
         cur.missionKind = "interception";
         cur.phaseKind = "round";
@@ -387,12 +421,23 @@ export async function parseRecentValidEeLogFromFile(
         }
         cur.curPhaseIndex = cur.interCompletedRounds + 1;
       } else if (reDefenseRewardTransitionOut.test(line)) {
-        // 普通 defense 不用 TransitionOut；镜像防御和拦截可用（没有 Transmission marker 时）
-        const isMirror = cur.missionKind === "mirrorDefense";
-        const allowAsRound =
-          cur.missionKind !== "defense" && cur.interHasTransmissionMarker !== true;
-        if (isMirror || allowAsRound) {
-          if (!isMirror) cur.missionKind = "interception";
+        if (cur.missionKind === "mirrorDefense") {
+          // 镜像防御：TransitionOut 用于统计轮数（2 波 1 轮），不改变 phaseKind/curPhaseIndex
+          cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
+          cur.roundCount = cur.interCompletedRounds;
+          // 若没有 LoopDefend 波次标记（旧日志），降级为轮次模式
+          if (cur.phaseKind !== "wave") {
+            cur.phaseKind = "round";
+            if (cur.interCompletedRounds === 1 && cur.pendingDronesBeforeFirstRoundMarker > 0) {
+              if (cur.phases.length < 1) cur.phases.push(0);
+              cur.phases[0] = (cur.phases[0] ?? 0) + cur.pendingDronesBeforeFirstRoundMarker;
+              cur.pendingDronesBeforeFirstRoundMarker = 0;
+            }
+            cur.curPhaseIndex = cur.interCompletedRounds + 1;
+          }
+        } else if (cur.missionKind !== "defense" && cur.interHasTransmissionMarker !== true) {
+          // 拦截：TransitionOut 作为轮次边界（没有 Transmission marker 时）
+          cur.missionKind = "interception";
           cur.phaseKind = "round";
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
           cur.roundCount = cur.interCompletedRounds;
@@ -413,7 +458,8 @@ export async function parseRecentValidEeLogFromFile(
         const idx0 = cur.curPhaseIndex - 1;
         while (cur.phases.length <= idx0) cur.phases.push(0);
         cur.phases[idx0] = (cur.phases[idx0] ?? 0) + 1;
-      } else if (cur.missionKind !== "defense") {
+      } else if (cur.missionKind !== "defense" && cur.missionKind !== "mirrorDefense") {
+        // 拦截：在第一个轮次边界前的无人机暂存
         cur.pendingDronesBeforeFirstRoundMarker++;
       }
     }
