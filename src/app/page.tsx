@@ -187,15 +187,7 @@ export default function Page() {
     const enemySpawned = m?.spawnedAtEnd ?? undefined;
     const drones = m?.shieldDroneCount ?? undefined;
     const hostTotalSec =
-      m?.eomDurationSec != null && m.eomDurationSec > 0
-        ? m.eomDurationSec
-        : m?.stateDurationSec != null && m.stateDurationSec > 0
-        ? m.stateDurationSec
-        : m?.onAgentCreatedSpanSec != null && m.onAgentCreatedSpanSec > 0
-          ? m.onAgentCreatedSpanSec
-          : m?.durationSec != null && m.durationSec > 0
-            ? m.durationSec
-            : undefined;
+      m?.eomDurationSec != null && m.eomDurationSec > 0 ? m.eomDurationSec : undefined;
     const lastClientTotalSec =
       m?.lastClientDurationSec != null && m.lastClientDurationSec > 0
         ? m.lastClientDurationSec
@@ -594,9 +586,9 @@ export default function Page() {
                 diffPct != null ? (diffPct > 0 ? "diffPos" : diffPct < 0 ? "diffNeg" : "diffFlat") : "";
               const diffText = diffPct == null ? "-" : formatSignedPercent(diffPct);
               const phaseLabel =
-                m.missionKind === "defense"
+                m.phases?.[0]?.kind === "wave"
                   ? "波次"
-                  : m.missionKind === "interception"
+                  : m.phases?.[0]?.kind === "round"
                     ? "轮次"
                     : "阶段";
               return (
@@ -760,11 +752,16 @@ export default function Page() {
                         <div className="kv">
                           <div className="k">{phaseLabel}</div>
                           <div className="v">
-                            {m.missionKind === "defense"
+                            {m.phases?.[0]?.kind === "wave"
                               ? `${metrics.waveCount ?? "-"} 波 / ${metrics.roundCount ?? "-"} 轮（每 3 波 1 轮）`
-                              : m.missionKind === "interception"
-                                ? `${metrics.roundCount ?? "-"} 轮（每轮 = 1 轮次）`
-                                : "-"}
+                              : m.phases?.[0]?.kind === "round" &&
+                                metrics.waveCount != null &&
+                                metrics.roundCount != null &&
+                                metrics.waveCount > metrics.roundCount
+                                ? `${metrics.waveCount} 波 / ${metrics.roundCount} 轮（每 2 波 1 轮）`
+                                : m.phases?.[0]?.kind === "round"
+                                  ? `${metrics.roundCount ?? "-"} 轮`
+                                  : "-"}
                           </div>
                         </div>
                         <div className="kv">
@@ -803,10 +800,16 @@ export default function Page() {
                               cumDrones += p.shieldDroneCount;
                               const perExpected = p.shieldDroneCount * BASE_DROP * mul;
                               cumExpected += perExpected;
+                              const isMirrorDefense =
+                                metrics.waveCount != null &&
+                                metrics.roundCount != null &&
+                                metrics.waveCount > metrics.roundCount;
                               const label =
                                 p.kind === "wave"
                                   ? `第 ${p.index} 波（第 ${Math.ceil(p.index / 3)} 轮）`
-                                  : `第 ${p.index} 轮`;
+                                  : isMirrorDefense
+                                    ? `第 ${p.index} 轮（第 ${p.index * 2 - 1}–${p.index * 2} 波）`
+                                    : `第 ${p.index} 轮`;
                               return (
                                 <div key={`${p.kind}-${p.index}`} className="phaseRow">
                                   <div className="c1">{label}</div>
