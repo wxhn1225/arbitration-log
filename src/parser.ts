@@ -83,9 +83,10 @@ const reInterceptionNewRound =
 const reDefenseRewardTransitionOut =
   /Script \[Info\]: DefenseReward\.lua: DefenseReward::TransitionOut\b/;
 
-// 镜像防御（Citrine's Last Wish）关卡标识：在 Host loading 块内的 levelOverride 行
+// 镜像防御关卡标识：在 Host loading 块内的 levelOverride 行
+// 已知地图：LastWishDefense（Citrine · 火星）、EntratiLabMirrorDefense（墓垒 · 火卫二）
 const reLevelOverrideMirrorDefense =
-  /levelOverride=\/Lotus\/Levels\/Proc\/LastWish\/LastWishDefense\b/;
+  /levelOverride=\/Lotus\/Levels\/Proc\/(?:LastWish\/LastWishDefense|EntratiLab\/EntratiLabMirrorDefense)\b/;
 
 // 镜像防御单波标记（与普通防御的 WaveDefend.lua 不同）
 const reLoopDefenseWave = /Script \[Info\]: LoopDefend\.lua: Loop Defense wave:\s*(\d+)\b/;
