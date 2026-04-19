@@ -224,12 +224,8 @@ function buildDroneGapData(
 
   const maxGap = Math.max(...gaps);
 
-  // 变步长分桶边界：0-6 每2s, 6-20 每5s, 20-110 每10s（与左栏等高）
-  const minCeil = 110;
-  const ceil10 = Math.max(minCeil, Math.ceil(maxGap / 10) * 10);
-  const edges: number[] = [0, 2, 4, 6, 10, 15, 20];
-  for (let v = 30; v <= ceil10; v += 10) edges.push(v);
-  if (edges[edges.length - 1]! <= maxGap) edges.push(edges[edges.length - 1]! + 10);
+  // 变步长分桶边界：0-6 每2s, 6-20 每5s, 20-100 每10s，最后一桶固定 100+
+  const edges: number[] = [0, 2, 4, 6, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100];
   const numBuckets = edges.length - 1;
 
   const totalDurs = new Array(numBuckets).fill(0) as number[];
