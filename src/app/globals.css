@@ -745,6 +745,9 @@ input[type="file"] { display: none; }
 }
 .satSelect:hover { border-color: var(--ink-border); }
 .satSelect:focus { border-color: var(--ink); }
+.satModeText {
+  font-size: 10px; font-weight: 700; color: var(--text2);
+}
 .satRows { display: flex; flex-direction: column; gap: 3px; }
 .satRow {
   display: flex; align-items: center; gap: 6px; height: 18px;

@@ -529,7 +529,8 @@ export default function Page() {
     if (!el) return;
     setCopyingIdx(idx);
     try {
-      // wait for fonts to finish loading so text renders correctly
+      // 等待一帧让 React 重渲染（下拉框 → 纯文字）
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       await document.fonts.ready;
       const { default: html2canvas } = await import("html2canvas");
       // pick background color matching current theme
@@ -864,16 +865,18 @@ export default function Page() {
                     if (!sd && !dg && !bd) return null;
                     return (
                       <div className="satDual">
-                        {/* 共享下拉框 */}
                         <div className="satModeRow">
-                          <select
-                            className="satSelect"
-                            value={satPctMode}
-                            onChange={(e) => setSatPctMode(e.target.value as "total" | "active")}
-                          >
-                            <option value="total">总时间</option>
-                            <option value="active">有效时间</option>
-                          </select>
+                          {copyingIdx === idx
+                            ? <span className="satModeText">{satPctMode === "total" ? "总时间" : "有效时间"}</span>
+                            : <select
+                                className="satSelect"
+                                value={satPctMode}
+                                onChange={(e) => setSatPctMode(e.target.value as "total" | "active")}
+                              >
+                                <option value="total">总时间</option>
+                                <option value="active">有效时间</option>
+                              </select>
+                          }
                         </div>
                         <div className="satDualGrid">
                           {/* 左：敌人饱和度 + 无人机连续生成 */}
