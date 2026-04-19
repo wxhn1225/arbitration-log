@@ -51,6 +51,7 @@
   --danger: #dc2626;
   --warn:   #d97706;
   --ok:     #16a34a;
+
 }
 
 /* ── B: Deep Ocean (深海蓝) ── */
@@ -99,6 +100,7 @@
   --danger: #f87171;
   --warn:   #fbbf24;
   --ok:     #4ade80;
+
 }
 
 /* ── C: Warm Dark (暖雾暗色) ── */
@@ -143,6 +145,7 @@
   --stripe-b: linear-gradient(90deg, #7dd3fc, transparent);
   --stripe-c: linear-gradient(90deg, #d8b4fe, transparent);
   --stripe-d: linear-gradient(90deg, #fbbf24, transparent);
+
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -687,4 +690,85 @@ input[type="file"] { display: none; }
 .phaseCum { color: var(--muted); font-size: 0.85em; margin-left: 1px; }
 .detailEmpty { font-size: 13px; color: var(--muted); }
 
-code { font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size: 12px; color: var(--text2); }
+/* ═══════════════════════════════════════════════════════════
+   Saturation Dual Panel (敌人饱和度 + 无人机空窗期)
+═══════════════════════════════════════════════════════════ */
+.satDual {
+  margin: 4px 14px 0;
+}
+.satModeRow {
+  display: flex; justify-content: flex-end; margin-bottom: 6px;
+}
+.satDualGrid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+@media (max-width: 700px) { .satDualGrid { grid-template-columns: 1fr; } }
+
+.satLeftStack, .satRightStack { display: flex; flex-direction: column; gap: 10px; }
+
+.satDistrib {
+  padding: 10px 14px 8px;
+  border: 1px solid var(--inset-border);
+  border-radius: 14px;
+  background: var(--inset-bg);
+}
+.satTitleRow {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.satTitle {
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted);
+}
+.satMax {
+  font-size: 10px; font-weight: 800; letter-spacing: .3px;
+  color: var(--text2); font-variant-numeric: tabular-nums;
+}
+.satHead {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 4px; padding-bottom: 3px;
+  border-bottom: 1px solid var(--inset-border);
+}
+.satHeadLabel {
+  width: 36px; text-align: right; font-size: 9px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .3px; flex-shrink: 0;
+}
+.satHeadSpacer { flex: 1; }
+.satSelect {
+  appearance: none;
+  padding: 3px 20px 3px 8px; border-radius: 8px;
+  font-size: 10px; font-weight: 700; font-family: inherit;
+  color: var(--text2); background: var(--btn-bg); border: 1px solid var(--border2);
+  cursor: pointer; outline: none; transition: border-color .12s;
+  background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L4 4L7 1' stroke='%23999' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center;
+}
+.satSelect:hover { border-color: var(--ink-border); }
+.satSelect:focus { border-color: var(--ink); }
+.satRows { display: flex; flex-direction: column; gap: 3px; }
+.satRow {
+  display: flex; align-items: center; gap: 6px; height: 18px;
+}
+.satLabel {
+  min-width: 44px; text-align: right; font-size: 11px; font-weight: 700; white-space: nowrap;
+  color: var(--text2); font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.satTrack {
+  flex: 1; height: 14px; border-radius: 7px;
+  background: var(--inset-border); overflow: hidden;
+}
+.satFill {
+  height: 100%; border-radius: 7px;
+  transition: width .3s ease;
+}
+.satPct {
+  width: 52px; text-align: right; font-size: 11px; font-weight: 700;
+  color: var(--text2); font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.satFooter {
+  margin-top: 8px; padding-top: 6px;
+  border-top: 1px solid var(--inset-border);
+  font-size: 15px; font-weight: 900; color: var(--text);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+

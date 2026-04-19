@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { MissionResult, ParseResult } from "../parser";
+import type { MissionResult, ParseResult, TickingPoint } from "../parser";
 import { parseRecentValidEeLogFromFile } from "../parser";
 
 type Theme = "b" | "c" | "e";
@@ -98,12 +98,244 @@ function gradeCssClass(grade: string): string {
   return "gradeF";
 }
 
+// ---- 饱和度分析 -------------------------------------------------------------
+
+type SatBucket = { lo: number; hi: number | null; totalPct: number; activePct: number };
+type SatData = {
+  maxV: number;
+  buckets: SatBucket[];
+  gte15TotalPct: number;
+  gte15ActivePct: number;
+};
+
+function satColor(ratio: number): string {
+  const r = ratio < 0.5 ? Math.round(ratio * 2 * 255) : 255;
+  const g = ratio < 0.5 ? 255 : Math.round((1 - (ratio - 0.5) * 2) * 255);
+  return `rgb(${r},${g},40)`;
+}
+
+function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: number): SatData | null {
+  // 按选中时间裁剪：只保留时间窗口内的数据
+  let src = series;
+  if (hostSec != null && selectedSec != null && selectedSec < hostSec && selectedSec > 0) {
+    const trimStart = hostSec - selectedSec;
+    src = series.filter((p) => p.t >= trimStart);
+  }
+  if (src.length < 2) return null;
+  const maxV = Math.max(...src.map((p) => p.v), 1);
+  const STEP = 5;
+  const numBuckets = Math.max(1, Math.ceil((maxV + 1) / STEP));
+  const totalDurs = new Array(numBuckets).fill(0) as number[];
+  const activeDurs = new Array(numBuckets).fill(0) as number[];
+  let totalAll = 0, activeAll = 0;
+
+  const GAP_THRESH = 3;
+  const gaps: Array<{ start: number; end: number }> = [];
+  let runStart = -1;
+  for (let i = 0; i < src.length; i++) {
+    if (src[i]!.v === 0) {
+      if (runStart < 0) runStart = i;
+    } else {
+      if (runStart >= 0) {
+        const s = src[runStart]!.t;
+        const e = src[i]!.t;
+        if (runStart === 0 || e - s >= GAP_THRESH) gaps.push({ start: s, end: e });
+        runStart = -1;
+      }
+    }
+  }
+  if (runStart >= 0) {
+    const s = src[runStart]!.t;
+    const e = src[src.length - 1]!.t;
+    if (runStart === 0 || e - s >= GAP_THRESH) gaps.push({ start: s, end: e });
+  }
+
+  let gi = 0;
+  let gte15Total = 0, gte15Active = 0;
+  for (let i = 0; i < src.length - 1; i++) {
+    const dt = src[i + 1]!.t - src[i]!.t;
+    if (dt <= 0 || dt > 10) continue;
+    const v = src[i]!.v;
+    const t = src[i]!.t;
+    const idx = Math.min(Math.floor(v / STEP), numBuckets - 1);
+    totalDurs[idx]! += dt;
+    totalAll += dt;
+    if (v >= 15) gte15Total += dt;
+    while (gi < gaps.length && gaps[gi]!.end <= t) gi++;
+    const inGap = gi < gaps.length && t >= gaps[gi]!.start && t < gaps[gi]!.end;
+    if (!inGap) {
+      activeDurs[idx]! += dt;
+      activeAll += dt;
+      if (v >= 15) gte15Active += dt;
+    }
+  }
+  if (totalAll <= 0) return null;
+
+  const buckets: SatBucket[] = [];
+  for (let i = 0; i < numBuckets; i++) {
+    const lo = i * STEP;
+    const hi = i < numBuckets - 1 ? lo + STEP - 1 : null;
+    buckets.push({
+      lo,
+      hi,
+      totalPct: totalDurs[i]! / totalAll,
+      activePct: activeAll > 0 ? activeDurs[i]! / activeAll : 0,
+    });
+  }
+  return {
+    maxV,
+    buckets,
+    gte15TotalPct: totalAll > 0 ? (gte15Total / totalAll) * 100 : 0,
+    gte15ActivePct: activeAll > 0 ? (gte15Active / activeAll) * 100 : 0,
+  };
+}
+
+// ---- 无人机空窗期分析 ---------------------------------------------------------
+
+type DroneGapBucket = { lo: number; hi: number | null; totalPct: number; activePct: number };
+type DroneGapData = {
+  maxGap: number;
+  buckets: DroneGapBucket[];
+  gt6TotalPct: number;
+  gt6ActivePct: number;
+};
+
+function buildDroneGapData(
+  times: number[],
+  tickingSeries: TickingPoint[] | undefined,
+  hostSec?: number,
+  selectedSec?: number,
+): DroneGapData | null {
+  if (times.length < 2) return null;
+
+  // 按选中时间裁剪
+  let src = times;
+  if (hostSec != null && selectedSec != null && selectedSec < hostSec && selectedSec > 0) {
+    const trimStart = hostSec - selectedSec;
+    src = times.filter((t) => t >= trimStart);
+  }
+  if (src.length < 2) return null;
+
+  // 计算事件间的间隔（parser 已将连续无人机行合并为单次事件）
+  const gaps: number[] = [];
+  for (let i = 0; i < src.length - 1; i++) {
+    gaps.push(src[i + 1]! - src[i]!);
+  }
+
+  const maxGap = Math.max(...gaps);
+
+  // 变步长分桶边界：0-6 每2s, 6-20 每5s, 20-110 每10s（与左栏等高）
+  const minCeil = 110;
+  const ceil10 = Math.max(minCeil, Math.ceil(maxGap / 10) * 10);
+  const edges: number[] = [0, 2, 4, 6, 10, 15, 20];
+  for (let v = 30; v <= ceil10; v += 10) edges.push(v);
+  if (edges[edges.length - 1]! <= maxGap) edges.push(edges[edges.length - 1]! + 10);
+  const numBuckets = edges.length - 1;
+
+  const totalDurs = new Array(numBuckets).fill(0) as number[];
+  const activeDurs = new Array(numBuckets).fill(0) as number[];
+  let totalAll = 0, activeAll = 0;
+  let gt6Total = 0, gt6Active = 0;
+
+  // 识别间隙区间（复用敌人饱和度的逻辑：开局 + 轮次间隙中 MT=0 ≥3s）
+  const GAP_THRESH = 3;
+  const gapIntervals: Array<{ start: number; end: number }> = [];
+  if (tickingSeries && tickingSeries.length >= 2) {
+    let runStart = -1;
+    for (let i = 0; i < tickingSeries.length; i++) {
+      if (tickingSeries[i]!.v === 0) {
+        if (runStart < 0) runStart = i;
+      } else {
+        if (runStart >= 0) {
+          const s = tickingSeries[runStart]!.t;
+          const e = tickingSeries[i]!.t;
+          if (runStart === 0 || e - s >= GAP_THRESH) gapIntervals.push({ start: s, end: e });
+          runStart = -1;
+        }
+      }
+    }
+    if (runStart >= 0) {
+      const s = tickingSeries[runStart]!.t;
+      const e = tickingSeries[tickingSeries.length - 1]!.t;
+      if (runStart === 0 || e - s >= GAP_THRESH) gapIntervals.push({ start: s, end: e });
+    }
+  }
+
+  function isInGap(t: number): boolean {
+    for (const g of gapIntervals) {
+      if (t >= g.start && t < g.end) return true;
+    }
+    return false;
+  }
+
+  function bucketIdx(g: number): number {
+    for (let b = 0; b < numBuckets; b++) {
+      if (g < edges[b + 1]!) return b;
+    }
+    return numBuckets - 1;
+  }
+
+  for (let i = 0; i < gaps.length; i++) {
+    const g = gaps[i]!;
+    const idx = bucketIdx(g);
+    totalDurs[idx]! += g;
+    totalAll += g;
+    if (g > 6) gt6Total += g;
+    const midT = src[i]! + g / 2;
+    if (!isInGap(midT)) {
+      activeDurs[idx]! += g;
+      activeAll += g;
+      if (g > 6) gt6Active += g;
+    }
+  }
+  if (totalAll <= 0) return null;
+
+  const buckets: DroneGapBucket[] = [];
+  for (let i = 0; i < numBuckets; i++) {
+    const lo = edges[i]!;
+    const hi = i < numBuckets - 1 ? edges[i + 1]! : null;
+    buckets.push({
+      lo,
+      hi,
+      totalPct: totalDurs[i]! / totalAll,
+      activePct: activeAll > 0 ? activeDurs[i]! / activeAll : 0,
+    });
+  }
+  return {
+    maxGap: Math.round(maxGap),
+    buckets,
+    gt6TotalPct: totalAll > 0 ? (gt6Total / totalAll) * 100 : 0,
+    gt6ActivePct: activeAll > 0 ? (gt6Active / activeAll) * 100 : 0,
+  };
+}
+
+// ---- 无人机连续生成数量分布 -----------------------------------------------------
+
+type DroneBurstDistrib = {
+  maxBurst: number;
+  rows: Array<{ size: number; count: number; pct: number }>;
+};
+
+function buildDroneBurstDistrib(burstSizes: number[] | undefined): DroneBurstDistrib | null {
+  if (!burstSizes || burstSizes.length === 0) return null;
+  const maxBurst = Math.max(...burstSizes);
+  if (maxBurst <= 0) return null;
+  const counts = new Array(maxBurst).fill(0) as number[];
+  for (const s of burstSizes) {
+    if (s >= 1 && s <= maxBurst) counts[s - 1]!++;
+  }
+  const total = burstSizes.length;
+  const rows = counts.map((c, i) => ({ size: i + 1, count: c, pct: total > 0 ? c / total : 0 }));
+  return { maxBurst, rows };
+}
+
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const lastFileRef = useRef<File | null>(null);
   const runRefs = useRef<Array<HTMLDivElement | null>>([]);
   const captureRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
+  const [satPctMode, setSatPctMode] = useState<"total" | "active">("active");
 
   // ── theme ──
   const [theme, setThemeState] = useState<Theme>("e");
@@ -626,6 +858,135 @@ export default function Page() {
                       <div className="metricValue">{formatDuration(selectedSec)}</div>
                     </div>
                   </div>
+
+                  {(() => {
+                    const sd = m.tickingSeries && m.tickingSeries.length > 0
+                      ? buildSatData(m.tickingSeries, metrics.hostTotalSec, selectedSec) : null;
+                    const dg = m.droneSpawnTimes && m.droneSpawnTimes.length >= 2
+                      ? buildDroneGapData(m.droneSpawnTimes, m.tickingSeries, metrics.hostTotalSec, selectedSec) : null;
+                    const bd = buildDroneBurstDistrib(m.droneBurstSizes);
+                    if (!sd && !dg && !bd) return null;
+                    return (
+                      <div className="satDual">
+                        {/* 共享下拉框 */}
+                        <div className="satModeRow">
+                          <select
+                            className="satSelect"
+                            value={satPctMode}
+                            onChange={(e) => setSatPctMode(e.target.value as "total" | "active")}
+                          >
+                            <option value="total">总时间</option>
+                            <option value="active">有效时间</option>
+                          </select>
+                        </div>
+                        <div className="satDualGrid">
+                          {/* 左：敌人饱和度 + 无人机连续生成 */}
+                          {(sd || bd) && (
+                            <div className="satLeftStack">
+                              {sd && (
+                                <div className="satDistrib">
+                                  <div className="satTitleRow">
+                                    <span className="satTitle">敌人饱和度</span>
+                                    <span className="satMax">Max {sd.maxV}</span>
+                                  </div>
+                                  <div className="satHead">
+                                    <span className="satHeadLabel">存活</span>
+                                    <span className="satHeadSpacer" />
+                                    <span className="satHeadLabel">占比</span>
+                                  </div>
+                                  <div className="satRows">
+                                    {sd.buckets.map((b, i) => {
+                                      const label = b.hi != null ? `${b.lo}–${b.hi}` : `${b.lo}+`;
+                                      const ratio = sd.maxV > 0 ? (b.lo + (b.hi != null ? b.hi : b.lo)) / 2 / sd.maxV : 0;
+                                      const pct = satPctMode === "total" ? b.totalPct : b.activePct;
+                                      const barW = Math.max(pct > 0 ? 2 : 0, pct * 100);
+                                      return (
+                                        <div className="satRow" key={i}>
+                                          <span className="satLabel">{label}</span>
+                                          <div className="satTrack">
+                                            <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
+                                          </div>
+                                          <span className="satPct">{(pct * 100).toFixed(1)}%</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="satFooter">
+                                    ≥15 占比：{(satPctMode === "total" ? sd.gte15TotalPct : sd.gte15ActivePct).toFixed(1)}%
+                                  </div>
+                                </div>
+                              )}
+                              {bd && (
+                                <div className="satDistrib">
+                                  <div className="satTitleRow">
+                                    <span className="satTitle">无人机连续生成</span>
+                                    <span className="satMax">Max {bd.maxBurst}</span>
+                                  </div>
+                                  <div className="satHead">
+                                    <span className="satHeadLabel">数量</span>
+                                    <span className="satHeadSpacer" />
+                                    <span className="satHeadLabel">占比</span>
+                                  </div>
+                                  <div className="satRows">
+                                    {bd.rows.map((r) => {
+                                      const barW = Math.max(r.pct > 0 ? 2 : 0, r.pct * 100);
+                                      const ratio = bd.maxBurst > 1 ? (r.size - 1) / (bd.maxBurst - 1) : 0;
+                                      return (
+                                        <div className="satRow" key={r.size}>
+                                          <span className="satLabel">{r.size}</span>
+                                          <div className="satTrack">
+                                            <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
+                                          </div>
+                                          <span className="satPct">{(r.pct * 100).toFixed(1)}%</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="satFooter">
+                                    生成 {bd.rows.reduce((s, r) => s + r.count, 0)} 次
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {/* 右：无人机空窗期 */}
+                          {dg && (
+                            <div className="satDistrib">
+                              <div className="satTitleRow">
+                                <span className="satTitle">无人机空窗期</span>
+                                <span className="satMax">Max {dg.maxGap}s</span>
+                              </div>
+                              <div className="satHead">
+                                <span className="satHeadLabel">间隔(s)</span>
+                                <span className="satHeadSpacer" />
+                                <span className="satHeadLabel">占比</span>
+                              </div>
+                              <div className="satRows">
+                                {dg.buckets.map((b, i) => {
+                                  const label = b.hi != null ? `${b.lo}–${b.hi}` : `${b.lo}+`;
+                                  const ratio = dg.maxGap > 0 ? (b.lo + (b.hi != null ? b.hi : b.lo)) / 2 / dg.maxGap : 0;
+                                  const pct = satPctMode === "total" ? b.totalPct : b.activePct;
+                                  const barW = Math.max(pct > 0 ? 2 : 0, pct * 100);
+                                  return (
+                                    <div className="satRow" key={i}>
+                                      <span className="satLabel">{label}</span>
+                                      <div className="satTrack">
+                                        <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
+                                      </div>
+                                      <span className="satPct">{(pct * 100).toFixed(1)}%</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="satFooter">
+                                &gt;6s：{(satPctMode === "total" ? dg.gt6TotalPct : dg.gt6ActivePct).toFixed(1)}%
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="timeModeBar">
                     <label className="modeItem">

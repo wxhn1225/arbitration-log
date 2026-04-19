@@ -1,5 +1,7 @@
 // ---- 导出类型 ---------------------------------------------------------------
 
+export type TickingPoint = { t: number; v: number };   // 相对秒, MonitoredTicking
+
 export type MissionResult = {
   index: number;
   nodeId?: string;
@@ -14,6 +16,9 @@ export type MissionResult = {
     index: number; // 1-based
     shieldDroneCount: number;
   }>;
+  tickingSeries?: TickingPoint[];  // 存活敌人时间序列（降采样）
+  droneSpawnTimes?: number[];     // 无人机生成事件时间戳（连续行已合并，相对 stateStartedTime，秒）
+  droneBurstSizes?: number[];    // 每次生成事件的无人机数量（与 droneSpawnTimes 一一对应）
   status: "ok" | "incomplete";
 };
 
@@ -73,6 +78,7 @@ const reCreatePlayerForClient =
 // 敌人/无人机生成
 const reAnyOnAgentCreated = /AI \[Info\]: OnAgentCreated\b/;
 const reSpawned = /\bSpawned\s+(\d+)\b/;
+const reMonitoredTicking = /\bMonitoredTicking\s+(\d+)\b/;
 const reShieldDrone =
   /AI \[Info\]: OnAgentCreated \/Npc\/CorpusEliteShieldDroneAgent\d*\b/;
 
@@ -159,6 +165,13 @@ export async function parseRecentValidEeLogFromFile(
     // 镜像防御 LoopDefend 波次归零检测
     loopDefendLastWave?: number;   // 上次见到的波次编号
     loopDefendOffset?: number;     // 累计偏移（每次归零加上上次最大值）
+    // 存活敌人时间序列（降采样用）
+    tickingRaw: Array<{ t: number; v: number }>;  // 原始采集
+    tickingLastBucket: number;                     // 上一个桶的时间（秒，向下取整）
+    // 无人机生成事件（连续无人机行合并为一次事件）
+    droneTimesRaw: number[];
+    droneBurstRaw: number[];       // 每次事件包含的无人机数量（与 droneTimesRaw 一一对应）
+    lastOnAgentWasDrone: boolean;
   };
 
   let cur: Run | null = null;
@@ -259,6 +272,9 @@ export async function parseRecentValidEeLogFromFile(
         run.phaseKind && run.phases.length
           ? run.phases.map((n, i) => ({ kind: run.phaseKind!, index: i + 1, shieldDroneCount: n }))
           : undefined,
+      tickingSeries: run.tickingRaw.length > 0 ? run.tickingRaw : undefined,
+      droneSpawnTimes: run.droneTimesRaw.length > 0 ? run.droneTimesRaw : undefined,
+      droneBurstSizes: run.droneBurstRaw.length > 0 ? run.droneBurstRaw : undefined,
       status: run.endLine != null ? "ok" : "incomplete",
     };
 
@@ -304,6 +320,11 @@ export async function parseRecentValidEeLogFromFile(
         loadLevelSentFirstByPlayer: {},
         loopDefendLastWave: 0,
         loopDefendOffset: 0,
+        tickingRaw: [],
+        tickingLastBucket: -1,
+        droneTimesRaw: [],
+        droneBurstRaw: [],
+        lastOnAgentWasDrone: false,
       };
       if (voteNode?.[1]) cur.nodeId = voteNode[1];
       return;
@@ -391,6 +412,7 @@ export async function parseRecentValidEeLogFromFile(
 
     // 防御波次 / 镜像防御波次 / 拦截轮次 标记
     if (afterStarted) {
+
       // 镜像防御：单波标记（优先于 TransitionOut）
       if (cur.missionKind === "mirrorDefense") {
         const mlw = line.match(reLoopDefenseWave);
@@ -398,12 +420,8 @@ export async function parseRecentValidEeLogFromFile(
           const w = Number(mlw[1]);
           if (Number.isFinite(w) && w > 0) {
             if ((cur.loopDefendLastWave ?? 0) > 0 && w < (cur.loopDefendLastWave ?? 0)) {
-              // LoopDefend 脚本 buffer 循环归零（如 29→1）。
-              // 归零时的 "wave 1" 是脚本内部计数器重置事件，不是真实波次生成。
-              // 将 offset 设为 lastWave-1，使下一条真实标记（wave 2）= 正确的累计波次。
               cur.loopDefendOffset = (cur.loopDefendOffset ?? 0) + (cur.loopDefendLastWave ?? 0) - 1;
               cur.loopDefendLastWave = w;
-              // 跳过此归零标记，不更新 phase
             } else {
               cur.loopDefendLastWave = w;
               const actualWave = (cur.loopDefendOffset ?? 0) + w;
@@ -446,10 +464,8 @@ export async function parseRecentValidEeLogFromFile(
         cur.curPhaseIndex = cur.interCompletedRounds + 1;
       } else if (reDefenseRewardTransitionOut.test(line)) {
         if (cur.missionKind === "mirrorDefense") {
-          // 镜像防御：TransitionOut 用于统计轮数（2 波 1 轮），不改变 phaseKind/curPhaseIndex
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
           cur.roundCount = cur.interCompletedRounds;
-          // 若没有 LoopDefend 波次标记（旧日志），降级为轮次模式
           if (cur.phaseKind !== "wave") {
             cur.phaseKind = "round";
             if (cur.interCompletedRounds === 1 && cur.pendingDronesBeforeFirstRoundMarker > 0) {
@@ -460,7 +476,6 @@ export async function parseRecentValidEeLogFromFile(
             cur.curPhaseIndex = cur.interCompletedRounds + 1;
           }
         } else if (cur.missionKind !== "defense" && cur.interHasTransmissionMarker !== true) {
-          // 拦截：TransitionOut 作为轮次边界（没有 Transmission marker 时）
           cur.missionKind = "interception";
           cur.phaseKind = "round";
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
@@ -478,6 +493,20 @@ export async function parseRecentValidEeLogFromFile(
     // 无人机 & 敌人生成统计（SS_STARTED 之后才计入）
     if (afterStarted && reShieldDrone.test(line)) {
       cur.shieldDroneCount++;
+      if (cur.stateStartedTime != null) {
+        if (!cur.lastOnAgentWasDrone) {
+          // 新事件：记录时间戳 + burst 计数 1
+          const dt = parseTime(line);
+          if (dt != null) {
+            cur.droneTimesRaw.push(dt - cur.stateStartedTime);
+            cur.droneBurstRaw.push(1);
+          }
+        } else if (cur.droneBurstRaw.length > 0) {
+          // 连续无人机行：递增当前事件的 burst 计数
+          cur.droneBurstRaw[cur.droneBurstRaw.length - 1]!++;
+        }
+      }
+      cur.lastOnAgentWasDrone = true;
       if (cur.phaseKind && cur.curPhaseIndex != null && cur.curPhaseIndex > 0) {
         const idx0 = cur.curPhaseIndex - 1;
         while (cur.phases.length <= idx0) cur.phases.push(0);
@@ -489,10 +518,26 @@ export async function parseRecentValidEeLogFromFile(
     }
 
     if (afterStarted && reAnyOnAgentCreated.test(line)) {
+      if (!reShieldDrone.test(line)) cur.lastOnAgentWasDrone = false;
       const sm = line.match(reSpawned);
       if (sm) {
         const n = Number(sm[1]);
         if (Number.isFinite(n)) cur.lastSpawned = n;
+      }
+      // 采集 MonitoredTicking（每秒桶内取最大值，降采样）
+      const mt = line.match(reMonitoredTicking);
+      const t = parseTime(line);
+      if (mt && t != null && cur.stateStartedTime != null) {
+        const relT = t - cur.stateStartedTime;
+        const v = Number(mt[1]);
+        const bucket = Math.floor(relT);
+        if (bucket > cur.tickingLastBucket) {
+          cur.tickingRaw.push({ t: relT, v });
+          cur.tickingLastBucket = bucket;
+        } else if (cur.tickingRaw.length > 0) {
+          const last = cur.tickingRaw[cur.tickingRaw.length - 1]!;
+          if (v > last.v) last.v = v;
+        }
       }
     }
   };
