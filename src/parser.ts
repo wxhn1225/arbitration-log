@@ -19,6 +19,7 @@ export type MissionResult = {
   tickingSeries?: TickingPoint[];  // 存活敌人时间序列（降采样）
   droneSpawnTimes?: number[];     // 无人机生成事件时间戳（连续行已合并，相对 stateStartedTime，秒）
   droneBurstSizes?: number[];    // 每次生成事件的无人机数量（与 droneSpawnTimes 一一对应）
+  phaseBoundaryTimes?: number[]; // 轮次/波次边界时间戳（相对 stateStartedTime，秒）
   status: "ok" | "incomplete";
 };
 
@@ -172,6 +173,8 @@ export async function parseRecentValidEeLogFromFile(
     droneTimesRaw: number[];
     droneBurstRaw: number[];       // 每次事件包含的无人机数量（与 droneTimesRaw 一一对应）
     lastOnAgentWasDrone: boolean;
+    // 轮次/波次边界时间戳
+    phaseBoundaryTimesRaw: number[];
   };
 
   let cur: Run | null = null;
@@ -275,6 +278,7 @@ export async function parseRecentValidEeLogFromFile(
       tickingSeries: run.tickingRaw.length > 0 ? run.tickingRaw : undefined,
       droneSpawnTimes: run.droneTimesRaw.length > 0 ? run.droneTimesRaw : undefined,
       droneBurstSizes: run.droneBurstRaw.length > 0 ? run.droneBurstRaw : undefined,
+      phaseBoundaryTimes: run.phaseBoundaryTimesRaw.length > 0 ? run.phaseBoundaryTimesRaw : undefined,
       status: run.endLine != null ? "ok" : "incomplete",
     };
 
@@ -325,6 +329,7 @@ export async function parseRecentValidEeLogFromFile(
         droneTimesRaw: [],
         droneBurstRaw: [],
         lastOnAgentWasDrone: false,
+        phaseBoundaryTimesRaw: [],
       };
       if (voteNode?.[1]) cur.nodeId = voteNode[1];
       return;
@@ -440,6 +445,10 @@ export async function parseRecentValidEeLogFromFile(
         if (mw) {
           const w = Number(mw[1]);
           if (Number.isFinite(w) && w > 0) {
+            if (cur.stateStartedTime != null) {
+              const dt = parseTime(line);
+              if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
+            }
             cur.missionKind = "defense";
             cur.phaseKind = "wave";
             cur.curPhaseIndex = w;
@@ -451,6 +460,10 @@ export async function parseRecentValidEeLogFromFile(
 
       // 拦截：轮次播报
       if (reInterceptionNewRound.test(line)) {
+        if (cur.stateStartedTime != null) {
+          const dt = parseTime(line);
+          if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
+        }
         cur.missionKind = "interception";
         cur.phaseKind = "round";
         cur.interHasTransmissionMarker = true;
@@ -463,6 +476,10 @@ export async function parseRecentValidEeLogFromFile(
         }
         cur.curPhaseIndex = cur.interCompletedRounds + 1;
       } else if (reDefenseRewardTransitionOut.test(line)) {
+        if (cur.stateStartedTime != null) {
+          const dt = parseTime(line);
+          if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
+        }
         if (cur.missionKind === "mirrorDefense") {
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
           cur.roundCount = cur.interCompletedRounds;

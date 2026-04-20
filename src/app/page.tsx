@@ -108,10 +108,13 @@ type SatData = {
   gte15ActivePct: number;
 };
 
-// ---- 共享：检测无效时段（MT=0 ≥3s 或 采样点间隔 ≥3s）----
+// ---- 共享：检测无效时段 ----
 const INACTIVE_THRESH = 3;
 
-function detectInactiveIntervals(series: TickingPoint[]): Array<{ start: number; end: number }> {
+function detectInactiveIntervals(
+  series: TickingPoint[],
+  phaseBoundaryTimes?: number[],
+): Array<{ start: number; end: number }> {
   if (series.length < 2) return [];
   const intervals: Array<{ start: number; end: number }> = [];
 
@@ -135,15 +138,34 @@ function detectInactiveIntervals(series: TickingPoint[]): Array<{ start: number;
     if (runStart === 0 || e - s >= INACTIVE_THRESH) intervals.push({ start: s, end: e });
   }
 
-  // 2) 采样点间隔 ≥ INACTIVE_THRESH 秒，且边界 MT=0（开局或轮次间，非战斗中）
+  // 2) 采样点间隔 ≥ INACTIVE_THRESH 秒，满足以下任一条件标为无效：
+  //    - 开局第一段（i===0）
+  //    - 边界任一侧 MT=0（轮次切换后无人刷新）
+  //    - 间隔超长（≥20s），极可能是轮次间隙（战斗中很少 20s 无生成）
   for (let i = 0; i < series.length - 1; i++) {
     const s = series[i]!.t;
     const e = series[i + 1]!.t;
-    if (e - s >= INACTIVE_THRESH) {
+    const gap = e - s;
+    if (gap >= INACTIVE_THRESH) {
       const vBefore = series[i]!.v;
       const vAfter = series[i + 1]!.v;
-      if (i === 0 || vBefore === 0 || vAfter === 0) {
+      if (i === 0 || vBefore === 0 || vAfter === 0 || gap >= 20) {
         intervals.push({ start: s, end: e });
+      }
+    }
+  }
+
+  // 3) 轮次边界时间戳标记的采样空白（MT 两端都 >0 但确实是轮次间）
+  if (phaseBoundaryTimes && phaseBoundaryTimes.length > 0) {
+    for (const bt of phaseBoundaryTimes) {
+      for (let i = 0; i < series.length - 1; i++) {
+        if (series[i]!.t <= bt && series[i + 1]!.t > bt) {
+          const gap = series[i + 1]!.t - series[i]!.t;
+          if (gap >= INACTIVE_THRESH) {
+            intervals.push({ start: series[i]!.t, end: series[i + 1]!.t });
+          }
+          break;
+        }
       }
     }
   }
@@ -168,7 +190,7 @@ function satColor(ratio: number): string {
   return `rgb(${r},${g},40)`;
 }
 
-function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: number): SatData | null {
+function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: number, phaseBoundaryTimes?: number[]): SatData | null {
   // 按选中时间裁剪：只保留时间窗口内的数据
   let src = series;
   if (hostSec != null && selectedSec != null && selectedSec < hostSec && selectedSec > 0) {
@@ -183,7 +205,7 @@ function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: nu
   const activeDurs = new Array(numBuckets).fill(0) as number[];
   let totalAll = 0, activeAll = 0;
 
-  const gaps = detectInactiveIntervals(src);
+  const gaps = detectInactiveIntervals(src, phaseBoundaryTimes);
   let gi = 0;
   let gte15Total = 0, gte15Active = 0;
   for (let i = 0; i < src.length - 1; i++) {
@@ -239,6 +261,7 @@ function buildDroneGapData(
   tickingSeries: TickingPoint[] | undefined,
   hostSec?: number,
   selectedSec?: number,
+  phaseBoundaryTimes?: number[],
 ): DroneGapData | null {
   if (times.length < 2) return null;
 
@@ -267,7 +290,7 @@ function buildDroneGapData(
   let totalAll = 0, activeAll = 0;
   let gt6Total = 0, gt6Active = 0;
 
-  const gapIntervals = tickingSeries ? detectInactiveIntervals(tickingSeries) : [];
+  const gapIntervals = tickingSeries ? detectInactiveIntervals(tickingSeries, phaseBoundaryTimes) : [];
 
   function isInGap(t: number): boolean {
     for (const g of gapIntervals) {
@@ -870,9 +893,9 @@ export default function Page() {
 
                   {(() => {
                     const sd = m.tickingSeries && m.tickingSeries.length > 0
-                      ? buildSatData(m.tickingSeries, metrics.hostTotalSec, selectedSec) : null;
+                      ? buildSatData(m.tickingSeries, metrics.hostTotalSec, selectedSec, m.phaseBoundaryTimes) : null;
                     const dg = m.droneSpawnTimes && m.droneSpawnTimes.length >= 2
-                      ? buildDroneGapData(m.droneSpawnTimes, m.tickingSeries, metrics.hostTotalSec, selectedSec) : null;
+                      ? buildDroneGapData(m.droneSpawnTimes, m.tickingSeries, metrics.hostTotalSec, selectedSec, m.phaseBoundaryTimes) : null;
                     const bd = buildDroneBurstDistrib(m.droneBurstSizes);
                     if (!sd && !dg && !bd) return null;
                     return (
