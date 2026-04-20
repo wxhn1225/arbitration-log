@@ -108,6 +108,60 @@ type SatData = {
   gte15ActivePct: number;
 };
 
+// ---- 共享：检测无效时段（MT=0 ≥3s 或 采样点间隔 ≥3s）----
+const INACTIVE_THRESH = 3;
+
+function detectInactiveIntervals(series: TickingPoint[]): Array<{ start: number; end: number }> {
+  if (series.length < 2) return [];
+  const intervals: Array<{ start: number; end: number }> = [];
+
+  // 1) MT=0 连续 ≥ INACTIVE_THRESH 秒（或开局首段 MT=0）
+  let runStart = -1;
+  for (let i = 0; i < series.length; i++) {
+    if (series[i]!.v === 0) {
+      if (runStart < 0) runStart = i;
+    } else {
+      if (runStart >= 0) {
+        const s = series[runStart]!.t;
+        const e = series[i]!.t;
+        if (runStart === 0 || e - s >= INACTIVE_THRESH) intervals.push({ start: s, end: e });
+        runStart = -1;
+      }
+    }
+  }
+  if (runStart >= 0) {
+    const s = series[runStart]!.t;
+    const e = series[series.length - 1]!.t;
+    if (runStart === 0 || e - s >= INACTIVE_THRESH) intervals.push({ start: s, end: e });
+  }
+
+  // 2) 采样点间隔 ≥ INACTIVE_THRESH 秒，且边界 MT=0（开局或轮次间，非战斗中）
+  for (let i = 0; i < series.length - 1; i++) {
+    const s = series[i]!.t;
+    const e = series[i + 1]!.t;
+    if (e - s >= INACTIVE_THRESH) {
+      const vBefore = series[i]!.v;
+      const vAfter = series[i + 1]!.v;
+      if (i === 0 || vBefore === 0 || vAfter === 0) {
+        intervals.push({ start: s, end: e });
+      }
+    }
+  }
+
+  // 按 start 排序并合并重叠区间
+  intervals.sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const iv of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && iv.start <= last.end) {
+      last.end = Math.max(last.end, iv.end);
+    } else {
+      merged.push({ start: iv.start, end: iv.end });
+    }
+  }
+  return merged;
+}
+
 function satColor(ratio: number): string {
   const r = ratio < 0.5 ? Math.round(ratio * 2 * 255) : 255;
   const g = ratio < 0.5 ? 255 : Math.round((1 - (ratio - 0.5) * 2) * 255);
@@ -129,27 +183,7 @@ function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: nu
   const activeDurs = new Array(numBuckets).fill(0) as number[];
   let totalAll = 0, activeAll = 0;
 
-  const GAP_THRESH = 3;
-  const gaps: Array<{ start: number; end: number }> = [];
-  let runStart = -1;
-  for (let i = 0; i < src.length; i++) {
-    if (src[i]!.v === 0) {
-      if (runStart < 0) runStart = i;
-    } else {
-      if (runStart >= 0) {
-        const s = src[runStart]!.t;
-        const e = src[i]!.t;
-        if (runStart === 0 || e - s >= GAP_THRESH) gaps.push({ start: s, end: e });
-        runStart = -1;
-      }
-    }
-  }
-  if (runStart >= 0) {
-    const s = src[runStart]!.t;
-    const e = src[src.length - 1]!.t;
-    if (runStart === 0 || e - s >= GAP_THRESH) gaps.push({ start: s, end: e });
-  }
-
+  const gaps = detectInactiveIntervals(src);
   let gi = 0;
   let gte15Total = 0, gte15Active = 0;
   for (let i = 0; i < src.length - 1; i++) {
@@ -233,29 +267,7 @@ function buildDroneGapData(
   let totalAll = 0, activeAll = 0;
   let gt6Total = 0, gt6Active = 0;
 
-  // 识别间隙区间（复用敌人饱和度的逻辑：开局 + 轮次间隙中 MT=0 ≥3s）
-  const GAP_THRESH = 3;
-  const gapIntervals: Array<{ start: number; end: number }> = [];
-  if (tickingSeries && tickingSeries.length >= 2) {
-    let runStart = -1;
-    for (let i = 0; i < tickingSeries.length; i++) {
-      if (tickingSeries[i]!.v === 0) {
-        if (runStart < 0) runStart = i;
-      } else {
-        if (runStart >= 0) {
-          const s = tickingSeries[runStart]!.t;
-          const e = tickingSeries[i]!.t;
-          if (runStart === 0 || e - s >= GAP_THRESH) gapIntervals.push({ start: s, end: e });
-          runStart = -1;
-        }
-      }
-    }
-    if (runStart >= 0) {
-      const s = tickingSeries[runStart]!.t;
-      const e = tickingSeries[tickingSeries.length - 1]!.t;
-      if (runStart === 0 || e - s >= GAP_THRESH) gapIntervals.push({ start: s, end: e });
-    }
-  }
+  const gapIntervals = tickingSeries ? detectInactiveIntervals(tickingSeries) : [];
 
   function isInGap(t: number): boolean {
     for (const g of gapIntervals) {
