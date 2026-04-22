@@ -106,6 +106,8 @@ type SatData = {
   buckets: SatBucket[];
   gte15TotalPct: number;
   gte15ActivePct: number;
+  totalSec: number;
+  activeSec: number;
 };
 
 // ---- 共享：检测无效时段 ----
@@ -243,6 +245,8 @@ function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: nu
     buckets,
     gte15TotalPct: totalAll > 0 ? (gte15Total / totalAll) * 100 : 0,
     gte15ActivePct: activeAll > 0 ? (gte15Active / activeAll) * 100 : 0,
+    totalSec: totalAll,
+    activeSec: activeAll,
   };
 }
 
@@ -254,6 +258,8 @@ type DroneGapData = {
   buckets: DroneGapBucket[];
   gt2TotalPct: number;
   gt2ActivePct: number;
+  totalSec: number;
+  activeSec: number;
 };
 
 function buildDroneGapData(
@@ -279,10 +285,8 @@ function buildDroneGapData(
     gaps.push(src[i + 1]! - src[i]!);
   }
 
-  const maxGap = Math.max(...gaps);
-
-  // 变步长分桶边界：0-2 每0.5s, 2-6 每1s, 6-10 每2s, 10-30 每5s, 30-50 每10s，最后一桶固定 50+
-  const edges: number[] = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60];
+  // 变步长分桶边界：0-2 每0.5s, 2-4 每1s, 4-10 每2s, 10-30(10-15/15-20/20-30), 30-50 每10s，最后一桶固定 50+
+  const edges: number[] = [0, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 10, 15, 20, 30, 40, 50, 60];
   const numBuckets = edges.length - 1;
 
   const totalDurs = new Array(numBuckets).fill(0) as number[];
@@ -291,6 +295,9 @@ function buildDroneGapData(
   let gt2Total = 0, gt2Active = 0;
 
   const gapIntervals = tickingSeries ? detectInactiveIntervals(tickingSeries, phaseBoundaryTimes) : [];
+
+  // maxGap 只取有效时段内的最大间隔（排除无效时段）
+  let maxGap = 0;
 
   function isInGap(t: number): boolean {
     for (const g of gapIntervals) {
@@ -317,6 +324,7 @@ function buildDroneGapData(
       activeDurs[idx]! += g;
       activeAll += g;
       if (g > 2) gt2Active += g;
+      if (g > maxGap) maxGap = g;
     }
   }
   if (totalAll <= 0) return null;
@@ -337,6 +345,8 @@ function buildDroneGapData(
     buckets,
     gt2TotalPct: totalAll > 0 ? (gt2Total / totalAll) * 100 : 0,
     gt2ActivePct: activeAll > 0 ? (gt2Active / activeAll) * 100 : 0,
+    totalSec: totalAll,
+    activeSec: activeAll,
   };
 }
 
@@ -933,14 +943,16 @@ export default function Page() {
                                       const label = b.hi != null ? `${b.lo}–${b.hi}` : `${b.lo}+`;
                                       const ratio = sd.maxV > 0 ? (b.lo + (b.hi != null ? b.hi : b.lo)) / 2 / sd.maxV : 0;
                                       const pct = satPctMode === "total" ? b.totalPct : b.activePct;
+                                      const baseSec = satPctMode === "total" ? sd.totalSec : sd.activeSec;
                                       const barW = Math.max(pct > 0 ? 2 : 0, pct * 100);
+                                      const sec = pct * baseSec;
                                       return (
                                         <div className="satRow" key={i}>
                                           <span className="satLabel">{label}</span>
                                           <div className="satTrack">
                                             <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
                                           </div>
-                                          <span className="satPct">{(pct * 100).toFixed(1)}%</span>
+                                          <span className="satPct">{(pct * 100).toFixed(1)}% <span className="satSub">{sec.toFixed(1)}s</span></span>
                                         </div>
                                       );
                                     })}
@@ -971,7 +983,7 @@ export default function Page() {
                                           <div className="satTrack">
                                             <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
                                           </div>
-                                          <span className="satPct">{(r.pct * 100).toFixed(1)}%</span>
+                                          <span className="satPct">{(r.pct * 100).toFixed(1)}% <span className="satSub">{r.count}次</span></span>
                                         </div>
                                       );
                                     })}
@@ -1000,14 +1012,16 @@ export default function Page() {
                                   const label = b.hi != null ? `${b.lo}–${b.hi}` : `${b.lo}+`;
                                   const ratio = dg.maxGap > 0 ? (b.lo + (b.hi != null ? b.hi : b.lo)) / 2 / dg.maxGap : 0;
                                   const pct = satPctMode === "total" ? b.totalPct : b.activePct;
+                                  const baseSec = satPctMode === "total" ? dg.totalSec : dg.activeSec;
                                   const barW = Math.max(pct > 0 ? 2 : 0, pct * 100);
+                                  const sec = pct * baseSec;
                                   return (
                                     <div className="satRow" key={i}>
                                       <span className="satLabel">{label}</span>
                                       <div className="satTrack">
                                         <div className="satFill" style={{ width: `${barW}%`, backgroundColor: satColor(ratio) }} />
                                       </div>
-                                      <span className="satPct">{(pct * 100).toFixed(1)}%</span>
+                                      <span className="satPct">{(pct * 100).toFixed(1)}% <span className="satSub">{sec.toFixed(1)}s</span></span>
                                     </div>
                                   );
                                 })}
