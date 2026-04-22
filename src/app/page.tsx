@@ -252,8 +252,8 @@ type DroneGapBucket = { lo: number; hi: number | null; totalPct: number; activeP
 type DroneGapData = {
   maxGap: number;
   buckets: DroneGapBucket[];
-  gt6TotalPct: number;
-  gt6ActivePct: number;
+  gt2TotalPct: number;
+  gt2ActivePct: number;
 };
 
 function buildDroneGapData(
@@ -281,14 +281,14 @@ function buildDroneGapData(
 
   const maxGap = Math.max(...gaps);
 
-  // 变步长分桶边界：0-6 每2s, 6-20 每5s, 20-100 每10s，最后一桶固定 100+
-  const edges: number[] = [0, 2, 4, 6, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110];
+  // 变步长分桶边界：0-2 每0.5s, 2-6 每1s, 6-10 每2s, 10-30 每5s, 30-50 每10s，最后一桶固定 50+
+  const edges: number[] = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60];
   const numBuckets = edges.length - 1;
 
   const totalDurs = new Array(numBuckets).fill(0) as number[];
   const activeDurs = new Array(numBuckets).fill(0) as number[];
   let totalAll = 0, activeAll = 0;
-  let gt6Total = 0, gt6Active = 0;
+  let gt2Total = 0, gt2Active = 0;
 
   const gapIntervals = tickingSeries ? detectInactiveIntervals(tickingSeries, phaseBoundaryTimes) : [];
 
@@ -311,12 +311,12 @@ function buildDroneGapData(
     const idx = bucketIdx(g);
     totalDurs[idx]! += g;
     totalAll += g;
-    if (g > 6) gt6Total += g;
+    if (g > 2) gt2Total += g;
     const midT = src[i]! + g / 2;
     if (!isInGap(midT)) {
       activeDurs[idx]! += g;
       activeAll += g;
-      if (g > 6) gt6Active += g;
+      if (g > 2) gt2Active += g;
     }
   }
   if (totalAll <= 0) return null;
@@ -335,8 +335,8 @@ function buildDroneGapData(
   return {
     maxGap: Math.round(maxGap),
     buckets,
-    gt6TotalPct: totalAll > 0 ? (gt6Total / totalAll) * 100 : 0,
-    gt6ActivePct: activeAll > 0 ? (gt6Active / activeAll) * 100 : 0,
+    gt2TotalPct: totalAll > 0 ? (gt2Total / totalAll) * 100 : 0,
+    gt2ActivePct: activeAll > 0 ? (gt2Active / activeAll) * 100 : 0,
   };
 }
 
@@ -1013,7 +1013,7 @@ export default function Page() {
                                 })}
                               </div>
                               <div className="satFooter">
-                                &gt;6s：{(satPctMode === "total" ? dg.gt6TotalPct : dg.gt6ActivePct).toFixed(1)}%
+                                &gt;2s：{(satPctMode === "total" ? dg.gt2TotalPct : dg.gt2ActivePct).toFixed(1)}%
                               </div>
                             </div>
                           )}
