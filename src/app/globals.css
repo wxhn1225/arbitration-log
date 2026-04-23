@@ -691,7 +691,7 @@ input[type="file"] { display: none; }
 .detailEmpty { font-size: 13px; color: var(--muted); }
 
 /* ═══════════════════════════════════════════════════════════
-   Saturation Dual Panel (敌人饱和度 + 无人机空窗期)
+   Saturation Dual Panel (敌人饱和度 + 无人机真空期)
 ═══════════════════════════════════════════════════════════ */
 .satDual {
   margin: 4px 14px 0;

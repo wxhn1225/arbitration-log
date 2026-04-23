@@ -250,7 +250,7 @@ function buildSatData(series: TickingPoint[], hostSec?: number, selectedSec?: nu
   };
 }
 
-// ---- 无人机空窗期分析 ---------------------------------------------------------
+// ---- 无人机真空期分析 ---------------------------------------------------------
 
 type DroneGapBucket = { lo: number; hi: number | null; totalPct: number; activePct: number };
 type DroneGapData = {
@@ -995,11 +995,11 @@ export default function Page() {
                               )}
                             </div>
                           )}
-                          {/* 右：无人机空窗期 */}
+                          {/* 右：无人机真空期 */}
                           {dg && (
                             <div className="satDistrib">
                               <div className="satTitleRow">
-                                <span className="satTitle">无人机空窗期</span>
+                                <span className="satTitle">无人机真空期</span>
                                 <span className="satMax">Max {dg.maxGap}s</span>
                               </div>
                               <div className="satHead">
