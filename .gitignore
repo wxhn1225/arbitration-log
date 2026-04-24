@@ -38,3 +38,6 @@ go-analyzer-wails/frontend/package.json.md5
 # Next.js auto-generated
 next-env.d.ts
 
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+
