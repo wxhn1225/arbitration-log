@@ -736,10 +736,12 @@ function TimelineChart({
 function DetailOverlay({
   m,
   runIdx,
+  nodeInfo,
   onClose,
 }: {
   m: MissionResult;
   runIdx: number;
+  nodeInfo: string;
   onClose: () => void;
 }) {
   const [filter, setFilter] = useState<EventFilter>("all");
@@ -782,7 +784,7 @@ function DetailOverlay({
     >
       <div className="detailPanel">
         <div className="detailHeader">
-          <span className="detailTitle">Run #{runIdx + 1} — 事件时间线</span>
+          <span className="detailTitle">Run #{runIdx + 1} — {nodeInfo}</span>
           <span className="detailTotalCount">{events.length.toLocaleString()} 条</span>
           <button className="detailClose" onClick={onClose} title="关闭 (Esc)">✕</button>
         </div>
@@ -1783,6 +1785,7 @@ export default function Page() {
       <DetailOverlay
         m={detailState.m}
         runIdx={detailState.idx}
+        nodeInfo={nodeInfoLine(detailState.m)}
         onClose={() => setDetailState(null)}
       />
     )}
