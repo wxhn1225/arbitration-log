@@ -876,10 +876,43 @@ input[type="file"] { display: none; }
 .chartControlsWrap {
   position: relative; flex-shrink: 0;
 }
+.chartCanvasWrap {
+  position: relative;
+}
 .detailChart {
   width: 100%; height: 220px; display: block;
-  border-bottom: 1px solid var(--inset-border);
   background: var(--card-bg);
+}
+.chartSliderWrap {
+  position: relative;
+  padding: 0 12px 0 42px;
+  border-bottom: 1px solid var(--inset-border);
+}
+.chartSlider {
+  width: 100%; display: block;
+  height: 14px; cursor: pointer;
+  accent-color: var(--text2);
+  margin: 0;
+}
+.chartSliderTicks {
+  position: relative; height: 14px; pointer-events: none;
+}
+.chartSliderTick {
+  position: absolute; transform: translateX(-50%);
+  font-size: 9px; font-weight: 600; color: var(--text2);
+  line-height: 14px; pointer-events: auto; cursor: default;
+}
+.chartSliderTick::before {
+  content: ""; position: absolute; left: 50%; top: -14px;
+  width: 1px; height: 6px;
+  background: var(--text2); opacity: 0.5;
+  transform: translateX(-50%);
+}
+.chartSliderTick.tickOnly {
+  width: 1px; height: 14px; font-size: 0; overflow: hidden;
+}
+.chartSliderTick.tickOnly::before {
+  height: 4px; opacity: 0.3;
 }
 .speedControls {
   position: absolute; top: 6px; right: 8px;
@@ -896,9 +929,23 @@ input[type="file"] { display: none; }
   background: var(--text2); color: var(--card-bg);
   border-color: var(--text2);
 }
-.speedBtnSkip {
+.speedBtnSkip, .speedBtnView {
   margin-left: 2px;
   border-color: var(--text2);
+}
+.speedInput {
+  width: 42px; padding: 1px 4px; font-size: 11px; line-height: 1.5;
+  border: 1px solid var(--inset-border); border-radius: 4px;
+  background: var(--card-bg); color: var(--text);
+  text-align: right; outline: none;
+  -moz-appearance: textfield;
+}
+.speedInput::-webkit-inner-spin-button,
+.speedInput::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.speedInput:focus { border-color: var(--text2); }
+.speedInputUnit { font-size: 11px; color: var(--text2); margin-left: -1px; }
+.detailFilterFollow {
+  margin-left: auto;
 }
 .dtTimeLink {
   cursor: pointer; text-decoration: underline;

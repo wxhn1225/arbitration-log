@@ -434,6 +434,10 @@ function TimelineChart({
   playFromTime,
   speed,
   onSkipReady,
+  onPlayheadChange,
+  onViewModeChange,
+  onToggleViewReady,
+  onResumeReady,
 }: {
   allEvents: TimelineEvent[];
   selectedRange: [number, number] | null;
@@ -441,20 +445,32 @@ function TimelineChart({
   playFromTime: { t: number; seq: number } | null;
   speed: number;
   onSkipReady: (skipFn: (() => void) | null) => void;
+  onPlayheadChange: (t: number | null) => void;
+  onViewModeChange: (mode: "scroll" | "browse" | "full") => void;
+  onToggleViewReady: (fn: (() => void) | null) => void;
+  onResumeReady: (fn: (() => void) | null) => void;
 }) {
   const canvasRef        = useRef<HTMLCanvasElement>(null);
+  const sliderRef        = useRef<HTMLInputElement>(null);
   const animRef          = useRef<number>(0);
   const redrawRef        = useRef<((r: [number, number] | null) => void) | null>(null);
   const startScrollRef   = useRef<((sec: number) => void) | null>(null);
+  const jumpToRef        = useRef<((sec: number) => void) | null>(null);
+  const resumeRef        = useRef<(() => void) | null>(null);
   const skipRef          = useRef<(() => void) | null>(null);
+  const toggleViewRef    = useRef<(() => void) | null>(null);
   const selectedRangeRef = useRef(selectedRange);
   const speedRef         = useRef(speed);
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { selectedRangeRef.current = selectedRange; }, [selectedRange]);
   useEffect(() => { redrawRef.current?.(selectedRangeRef.current); }, [selectedRange]);
+  const lastPlaySeqRef = useRef(0);
   useEffect(() => {
-    if (playFromTime != null && startScrollRef.current) startScrollRef.current(playFromTime.t);
+    if (playFromTime != null && playFromTime.seq !== lastPlaySeqRef.current) {
+      lastPlaySeqRef.current = playFromTime.seq;
+      setTimeout(() => startScrollRef.current?.(playFromTime.t), 0);
+    }
   }, [playFromTime]);
 
   useEffect(() => {
@@ -647,12 +663,51 @@ function TimelineChart({
       drawScene(xOfFull, 0, maxT, fullPts, xTicks, range);
     }
 
-    let animMode: "scroll" | "full" = "scroll";
+    let animMode: "scroll" | "browse" | "full" = "scroll";
+    let browseStart = 0;
     let isDragging = false;
     let dragStartT = 0;
     let dragMoved  = false;
 
+    const slider = sliderRef.current;
+
+    function setMode(m: typeof animMode) { animMode = m; onViewModeChange(m); }
+
     redrawRef.current = (r) => { if (animMode === "full") drawFull(r); };
+
+    function drawBrowse(wStart: number) {
+      browseStart = Math.max(0, Math.min(wStart, totalScroll));
+      drawScrollFrame(browseStart);
+      if (slider) slider.value = String(Math.round((browseStart / Math.max(totalScroll, 1)) * 1000));
+    }
+
+    function enterBrowse(wStart: number) {
+      cancelAnimationFrame(animRef.current);
+      setMode("browse");
+      onRangeChange(null);
+      onSkipReady(null);
+      onPlayheadChange(null);
+      drawBrowse(wStart);
+    }
+
+    function enterFull() {
+      cancelAnimationFrame(animRef.current);
+      setMode("full");
+      redrawRef.current = (r) => drawFull(r);
+      drawFull(selectedRangeRef.current);
+      onRangeChange(null);
+      onSkipReady(null);
+      onPlayheadChange(null);
+      if (slider) slider.value = "1000";
+    }
+
+    const toggleView = () => {
+      if (animMode === "scroll") return;
+      if (animMode === "full") enterBrowse(browseStart);
+      else enterFull();
+    };
+    toggleViewRef.current = toggleView;
+    onToggleViewReady(toggleView);
 
     function clientXToTime(clientX: number) {
       const rect = cv.getBoundingClientRect();
@@ -661,7 +716,7 @@ function TimelineChart({
 
     function startScrollFrom(startSec: number) {
       cancelAnimationFrame(animRef.current);
-      animMode = "scroll";
+      setMode("scroll");
       onRangeChange(null);
       const scrollFrom = Math.max(0, Math.min(startSec, totalScroll));
       const remainScroll = totalScroll - scrollFrom;
@@ -672,48 +727,78 @@ function TimelineChart({
         const dt = now - prevNow; prevNow = now;
         progress += dt * speedRef.current / baseRemainMs;
         if (progress >= 1) { progress = 1; }
-        drawScrollFrame(scrollFrom + progress * remainScroll);
+        const curStart = scrollFrom + progress * remainScroll;
+        drawScrollFrame(curStart);
+        if (slider) slider.value = String(Math.round((curStart / Math.max(totalScroll, 1)) * 1000));
+        onPlayheadChange(curStart + windowDur * 0.5);
         if (progress < 1) { animRef.current = requestAnimationFrame(anim); }
-        else { animMode = "full"; redrawRef.current = (r) => drawFull(r); drawFull(selectedRangeRef.current); onSkipReady(null); }
+        else { enterBrowse(totalScroll); }
       }
       animRef.current = requestAnimationFrame(anim);
-      onSkipReady(() => skipToFull());
+      onSkipReady(() => enterFull());
     }
     startScrollRef.current = startScrollFrom;
+    jumpToRef.current = (sec: number) => enterBrowse(Math.max(0, sec - windowDur * 0.5));
+    resumeRef.current = () => { if (animMode === "browse") startScrollFrom(browseStart); };
+    onResumeReady(resumeRef.current);
 
-    function skipToFull() {
-      cancelAnimationFrame(animRef.current);
-      animMode = "full";
-      redrawRef.current = (r) => drawFull(r);
-      drawFull(selectedRangeRef.current);
-      onRangeChange(null);
-      onSkipReady(null);
+    let sliderDragging = false;
+    function onSliderInput() {
+      if (!slider) return;
+      sliderDragging = true;
+      const ratio = Number(slider.value) / 1000;
+      if (animMode !== "browse") {
+        cancelAnimationFrame(animRef.current);
+        setMode("browse");
+        onSkipReady(null);
+        onPlayheadChange(null);
+      }
+      drawBrowse(ratio * totalScroll);
     }
+    function onSliderChange() {
+      if (!slider || !sliderDragging) return;
+      sliderDragging = false;
+      startScrollFrom(browseStart);
+    }
+    slider?.addEventListener("input", onSliderInput);
+    slider?.addEventListener("change", onSliderChange);
 
     function onMouseDown(e: MouseEvent) {
       if (animMode === "scroll") {
-        skipToFull();
+        enterBrowse(browseStart);
         return;
       }
-      isDragging = true; dragMoved = false; dragStartT = clientXToTime(e.clientX);
+      if (animMode === "full") {
+        isDragging = true; dragMoved = false; dragStartT = clientXToTime(e.clientX);
+        return;
+      }
+      isDragging = true; dragMoved = false; dragStartT = e.clientX;
     }
     function onMouseMove(e: MouseEvent) {
-      if (!isDragging || animMode !== "full") return;
+      if (!isDragging) return;
       dragMoved = true;
-      drawFull([Math.min(dragStartT, clientXToTime(e.clientX)), Math.max(dragStartT, clientXToTime(e.clientX))]);
+      if (animMode === "full") {
+        drawFull([Math.min(dragStartT, clientXToTime(e.clientX)), Math.max(dragStartT, clientXToTime(e.clientX))]);
+      } else if (animMode === "browse") {
+        const dx = e.clientX - dragStartT;
+        dragStartT = e.clientX;
+        const dtSec = -(dx / cW) * windowDur;
+        drawBrowse(browseStart + dtSec);
+      }
     }
     function onMouseUp(e: MouseEvent) {
-      if (!isDragging || animMode !== "full") return;
+      if (!isDragging) return;
       isDragging = false;
-      if (!dragMoved) {
-        const clickT = clientXToTime(e.clientX);
-        startScrollFrom(clickT);
-        return;
+      if (animMode === "full") {
+        if (!dragMoved) {
+          startScrollFrom(clientXToTime(e.clientX));
+          return;
+        }
+        const lo = Math.min(dragStartT, clientXToTime(e.clientX));
+        const hi = Math.max(dragStartT, clientXToTime(e.clientX));
+        if (hi - lo < maxT * 0.005) { onRangeChange(null); drawFull(null); }
+        else { onRangeChange([lo, hi]); drawFull([lo, hi]); }
       }
-      const lo = Math.min(dragStartT, clientXToTime(e.clientX));
-      const hi = Math.max(dragStartT, clientXToTime(e.clientX));
-      if (hi - lo < maxT * 0.005) { onRangeChange(null); drawFull(null); }
-      else { onRangeChange([lo, hi]); drawFull([lo, hi]); }
     }
 
     cv.addEventListener("mousedown", onMouseDown);
@@ -727,10 +812,51 @@ function TimelineChart({
       cv.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      slider?.removeEventListener("input", onSliderInput);
+      slider?.removeEventListener("change", onSliderChange);
+      onToggleViewReady(null);
+      onResumeReady(null);
     };
   }, [allEvents, onRangeChange]);
 
-  return <canvas ref={canvasRef} className="detailChart" style={{ cursor: "crosshair" }} />;
+  const phases = useMemo(() => allEvents.filter((e) => e.kind === "phase"), [allEvents]);
+  const maxT = useMemo(() => Math.max(...allEvents.map((e) => e.t), 1), [allEvents]);
+
+  return (
+    <div className="chartCanvasWrap">
+      <canvas ref={canvasRef} className="detailChart" style={{ cursor: "crosshair" }} />
+      <div className="chartSliderWrap">
+        <input
+          ref={sliderRef}
+          type="range"
+          className="chartSlider"
+          min={0}
+          max={1000}
+          defaultValue={0}
+        />
+        <div className="chartSliderTicks">
+          {(() => {
+            const total = phases.length;
+            const step = total <= 20 ? 1 : total <= 50 ? 5 : total <= 100 ? 10 : 20;
+            return phases.map((p) => {
+              const idx = p.phaseIdx ?? 0;
+              const showLabel = idx === 1 || idx % step === 0 || idx === total;
+              return (
+                <span
+                  key={p.t}
+                  className={`chartSliderTick${showLabel ? "" : " tickOnly"}`}
+                  style={{ left: `${(p.t / maxT) * 100}%` }}
+                  title={`第${idx}波 — ${p.t.toFixed(0)}s`}
+                >
+                  {showLabel ? idx : ""}
+                </span>
+              );
+            });
+          })()}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DetailOverlay({
@@ -749,6 +875,11 @@ function DetailOverlay({
   const [speed, setSpeed] = useState(1);
   const [playTrigger, setPlayTrigger] = useState<{ t: number; seq: number } | null>(null);
   const [skipFn, setSkipFn] = useState<(() => void) | null>(null);
+  const [viewMode, setViewMode] = useState<"scroll" | "browse" | "full">("scroll");
+  const [followPlay, setFollowPlay] = useState(false);
+  const toggleViewFnRef = useRef<(() => void) | null>(null);
+  const resumeFnRef = useRef<(() => void) | null>(null);
+  const playheadRef = useRef<number | null>(null);
   const allEvents = useMemo(() => buildEventTimeline(m), [m]);
   const events = useMemo(() => {
     let evts = filter === "all" ? allEvents : allEvents.filter((e) => e.kind === filter);
@@ -758,12 +889,35 @@ function DetailOverlay({
   const handlePlayFrom = (t: number) => setPlayTrigger({ t, seq: Date.now() });
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(followPlay);
+  useEffect(() => { followRef.current = followPlay; }, [followPlay]);
+  const eventsRef = useRef(events);
+  useEffect(() => { eventsRef.current = events; }, [events]);
+
   const rowVirtualizer = useVirtualizer({
     count: events.length,
     getScrollElement: () => bodyRef.current,
     estimateSize: () => 28,
     overscan: 12,
   });
+  const virtualizerRef = useRef(rowVirtualizer);
+  useEffect(() => { virtualizerRef.current = rowVirtualizer; }, [rowVirtualizer]);
+
+  const handlePlayhead = useMemo(() => {
+    let last = 0;
+    return (t: number | null) => {
+      playheadRef.current = t;
+      if (t == null || !followRef.current) return;
+      const now = performance.now();
+      if (now - last < 120) return;
+      last = now;
+      const evs = eventsRef.current;
+      if (evs.length === 0) return;
+      let lo = 0, hi = evs.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (evs[mid]!.t < t) lo = mid + 1; else hi = mid; }
+      virtualizerRef.current.scrollToIndex(lo, { align: "center", behavior: "smooth" });
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -796,17 +950,58 @@ function DetailOverlay({
             playFromTime={playTrigger}
             speed={speed}
             onSkipReady={(fn) => setSkipFn(() => fn)}
+            onPlayheadChange={handlePlayhead}
+            onViewModeChange={setViewMode}
+            onToggleViewReady={(fn) => { toggleViewFnRef.current = fn; }}
+            onResumeReady={(fn) => { resumeFnRef.current = fn; }}
           />
           <div className="speedControls">
-            {[0.5, 1, 2, 3].map((s) => (
+            <button
+              className={`speedBtn${(viewMode === "browse" || speed === 0) ? " active" : ""}`}
+              onClick={() => {
+                if (viewMode === "browse") {
+                  if (speed === 0) setSpeed(1);
+                  resumeFnRef.current?.();
+                } else {
+                  setSpeed(speed === 0 ? 1 : 0);
+                }
+              }}
+            >{(viewMode === "browse" || speed === 0) ? "▶" : "⏸"}</button>
+            {[0.1, 0.25, 0.5, 1, 2].map((s) => (
               <button
                 key={s}
-                className={`speedBtn${speed === s ? " active" : ""}`}
-                onClick={() => setSpeed(s)}
+                className={`speedBtn${speed === s && viewMode !== "browse" ? " active" : ""}`}
+                onClick={() => {
+                  setSpeed(s);
+                  if (viewMode === "browse") {
+                    setTimeout(() => resumeFnRef.current?.(), 0);
+                  }
+                }}
               >{s}×</button>
             ))}
+            <input
+              className="speedInput"
+              type="number"
+              min="0"
+              step="0.1"
+              value={speed}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "" || raw === "-") { setSpeed(0); return; }
+                const v = parseFloat(raw);
+                if (Number.isFinite(v) && v >= 0) setSpeed(v);
+              }}
+              title="自定义倍速"
+            />
+            <span className="speedInputUnit">×</span>
             {skipFn && (
               <button className="speedBtn speedBtnSkip" onClick={skipFn}>跳过 ⏭</button>
+            )}
+            {viewMode !== "scroll" && (
+              <button
+                className="speedBtn speedBtnView"
+                onClick={() => toggleViewFnRef.current?.()}
+              >{viewMode === "browse" ? "全景" : "窗口"}</button>
             )}
           </div>
         </div>
@@ -827,6 +1022,11 @@ function DetailOverlay({
               <button className="chartRangeClear" onClick={() => setChartRange(null)} title="清除时间筛选">✕</button>
             </div>
           )}
+          <button
+            className={`detailFilter detailFilterFollow${followPlay ? " active" : ""}`}
+            onClick={() => setFollowPlay((v) => !v)}
+            title={followPlay ? "表格跟随播放中，点击关闭" : "表格不跟随，点击开启"}
+          >{followPlay ? "跟随 ✓" : "跟随"}</button>
         </div>
         <div className="detailTableHead">
           <span className="dtTime">时间 (s)</span>
