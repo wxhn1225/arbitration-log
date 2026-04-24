@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { MissionResult, ParseResult, TickingPoint } from "../parser";
 import { parseRecentValidEeLogFromFile } from "../parser";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 type Theme = "b" | "c" | "e";
 const THEME_LABELS: Record<Theme, string> = { b: "深海蓝", c: "暖雾暗", e: "暖奶油" };
@@ -370,6 +371,503 @@ function buildDroneBurstDistrib(burstSizes: number[] | undefined): DroneBurstDis
   return { maxBurst, rows };
 }
 
+// ---- 事件时间线 ----------------------------------------------------------------
+
+type EventKind = "ticking" | "drone" | "phase";
+type TimelineEvent = {
+  t: number;
+  kind: EventKind;
+  value?: number;
+  phaseIdx?: number;
+  phaseKind?: "wave" | "round";
+};
+
+function buildEventTimeline(m: MissionResult): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+  if (m.tickingSeries) {
+    for (const p of m.tickingSeries) {
+      events.push({ t: p.t, kind: "ticking", value: p.v });
+    }
+  }
+  if (m.droneSpawnTimes) {
+    for (let i = 0; i < m.droneSpawnTimes.length; i++) {
+      events.push({
+        t: m.droneSpawnTimes[i]!,
+        kind: "drone",
+        value: m.droneBurstSizes?.[i],
+      });
+    }
+  }
+  if (m.phaseBoundaryTimes) {
+    const phaseKind = m.phases?.[0]?.kind;
+    for (let i = 0; i < m.phaseBoundaryTimes.length; i++) {
+      events.push({
+        t: m.phaseBoundaryTimes[i]!,
+        kind: "phase",
+        phaseIdx: i + 1,
+        phaseKind,
+      });
+    }
+  }
+  events.sort((a, b) => a.t - b.t);
+  return events;
+}
+
+const KIND_LABELS: Record<EventKind, string> = {
+  ticking: "存活敌人",
+  drone: "无人机生成",
+  phase: "波次",
+};
+
+type EventFilter = "all" | EventKind;
+const FILTER_OPTIONS: { key: EventFilter; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "ticking", label: "存活敌人" },
+  { key: "drone", label: "无人机生成" },
+  { key: "phase", label: "波次" },
+];
+
+function TimelineChart({
+  allEvents,
+  selectedRange,
+  onRangeChange,
+  playFromTime,
+  speed,
+  onSkipReady,
+}: {
+  allEvents: TimelineEvent[];
+  selectedRange: [number, number] | null;
+  onRangeChange: (r: [number, number] | null) => void;
+  playFromTime: { t: number; seq: number } | null;
+  speed: number;
+  onSkipReady: (skipFn: (() => void) | null) => void;
+}) {
+  const canvasRef        = useRef<HTMLCanvasElement>(null);
+  const animRef          = useRef<number>(0);
+  const redrawRef        = useRef<((r: [number, number] | null) => void) | null>(null);
+  const startScrollRef   = useRef<((sec: number) => void) | null>(null);
+  const skipRef          = useRef<(() => void) | null>(null);
+  const selectedRangeRef = useRef(selectedRange);
+  const speedRef         = useRef(speed);
+
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { selectedRangeRef.current = selectedRange; }, [selectedRange]);
+  useEffect(() => { redrawRef.current?.(selectedRangeRef.current); }, [selectedRange]);
+  useEffect(() => {
+    if (playFromTime != null && startScrollRef.current) startScrollRef.current(playFromTime.t);
+  }, [playFromTime]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    cancelAnimationFrame(animRef.current);
+    const cv = canvas;
+
+    const W = cv.offsetWidth, H = cv.offsetHeight;
+    if (W === 0 || H === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctxRaw = cv.getContext("2d");
+    if (!ctxRaw) return;
+    const c = ctxRaw;
+    c.scale(dpr, dpr);
+
+    const ticking = allEvents.filter((e) => e.kind === "ticking");
+    const drones  = allEvents.filter((e) => e.kind === "drone");
+    const phases  = allEvents.filter((e) => e.kind === "phase");
+    if (ticking.length === 0 && drones.length === 0) return;
+
+    const maxT  = Math.max(...allEvents.map((e) => e.t), 1);
+    const maxV  = Math.max(...ticking.map((e) => e.value ?? 0), 1);
+    const maxDC = Math.max(...drones.map((e) => e.value ?? 1), 1);
+
+    const PAD = { top: 10, right: 12, bottom: 24, left: 42 };
+    const cW = W - PAD.left - PAD.right;
+    const cH = H - PAD.top - PAD.bottom;
+    const aH = Math.floor(cH * 0.62);
+    const aTop = PAD.top, aBot = PAD.top + aH;
+    const divY = aBot + 1, dTop = divY + 2, dBot = PAD.top + cH;
+    const dH = cH - aH - 3;
+
+    const isDark = !!document.documentElement.getAttribute("data-theme");
+    const labelC  = isDark ? "rgb(190,190,190)" : "rgb(30,24,16)";
+    const gridC   = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.10)";
+    const divC    = isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.14)";
+    const lineC   = isDark ? "rgb(55,210,85)" : "rgb(0,125,42)";
+    const phaseC  = isDark ? "rgba(255,200,50,0.85)" : "rgba(130,80,0,0.92)";
+    const bandC   = isDark ? "rgba(255,255,255,0.026)" : "rgba(0,0,0,0.028)";
+    const selFill = isDark ? "rgba(255,255,255,0.09)" : "rgba(60,80,220,0.09)";
+    const selBord = isDark ? "rgba(255,255,255,0.38)" : "rgba(60,80,220,0.55)";
+    const aFillT  = isDark ? "rgba(55,210,85,0.28)" : "rgba(0,140,50,0.23)";
+    const aFillB  = isDark ? "rgba(55,210,85,0.02)" : "rgba(0,140,50,0.02)";
+    const sFillT  = isDark ? "rgba(65,168,255,0.78)" : "rgba(10,62,192,0.68)";
+    const sFillB  = isDark ? "rgba(65,168,255,0.10)" : "rgba(10,62,192,0.08)";
+    const droneC  = isDark ? "rgb(65,168,255)" : "rgb(10,62,192)";
+
+    const windowDur   = Math.min(maxT * 0.22, 120);
+    const totalScroll = Math.max(0, maxT - windowDur);
+    const BASE_MS     = Math.max(6000, totalScroll * 25);
+
+    const waveBounds = [0, ...phases.map((p) => p.t), maxT];
+
+    const step = Math.max(1, Math.floor(ticking.length / 600));
+    const sampled: TimelineEvent[] = ticking.filter((_, i) => i % step === 0);
+    const lastPt = ticking[ticking.length - 1];
+    if (lastPt && sampled[sampled.length - 1] !== lastPt) sampled.push(lastPt);
+
+    function yA(v: number) { return aTop + (1 - v / maxV) * aH; }
+    function yD(n: number) { return dBot - (n / maxDC) * dH * 0.82; }
+
+    const xOfFull = (t: number) => PAD.left + (t / maxT) * cW;
+    const fullPts = sampled.map((e) => ({ x: xOfFull(e.t), y: yA(e.value ?? 0) }));
+
+    function catmullSegments(pts: { x: number; y: number }[]) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(0, i - 1)]!;
+        const p1 = pts[i]!;
+        const p2 = pts[i + 1]!;
+        const p3 = pts[Math.min(pts.length - 1, i + 2)]!;
+        c.bezierCurveTo(
+          p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6,
+          p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6,
+          p2.x, p2.y,
+        );
+      }
+    }
+
+    function fmtTime(sec: number) {
+      const s = Math.round(sec);
+      const mm = Math.floor(s / 60), ss = s % 60;
+      return mm > 0 ? `${mm}:${String(ss).padStart(2, "0")}` : `${s}s`;
+    }
+
+    function drawScene(
+      xOf: (t: number) => number,
+      tA: number, tB: number,
+      pts: { x: number; y: number }[],
+      xTicks: number[],
+      range: [number, number] | null,
+    ) {
+      c.clearRect(0, 0, W, H);
+
+      c.fillStyle = labelC; c.font = "bold 12px sans-serif";
+      c.textAlign = "right"; c.textBaseline = "middle";
+      c.fillText(String(maxV), PAD.left - 4, aTop);
+      c.fillText("0", PAD.left - 4, aBot);
+      c.fillStyle = isDark ? "rgba(65,168,255,0.7)" : "rgba(10,62,192,0.7)";
+      c.font = "bold 10px sans-serif";
+      c.fillText("生成", PAD.left - 4, (dTop + dBot) / 2);
+
+      c.fillStyle = labelC; c.font = "bold 12px sans-serif";
+      c.textAlign = "center"; c.textBaseline = "top";
+      for (const t of xTicks) c.fillText(fmtTime(t), xOf(t), dBot + 4);
+
+      c.save();
+      c.beginPath(); c.rect(PAD.left, 0, cW, H); c.clip();
+
+      for (let i = 1; i < waveBounds.length - 1; i += 2) {
+        const lo = waveBounds[i]!, hi = waveBounds[i + 1]!;
+        if (hi <= tA || lo >= tB) continue;
+        const x1 = Math.max(PAD.left, xOf(Math.max(lo, tA)));
+        const x2 = Math.min(PAD.left + cW, xOf(Math.min(hi, tB)));
+        if (x2 > x1) { c.fillStyle = bandC; c.fillRect(x1, aTop, x2 - x1, cH); }
+      }
+
+      c.strokeStyle = gridC; c.lineWidth = 0.5;
+      for (let i = 0; i <= 4; i++) {
+        const y = aTop + (i / 4) * aH;
+        c.beginPath(); c.moveTo(PAD.left, y); c.lineTo(PAD.left + cW, y); c.stroke();
+      }
+
+      c.strokeStyle = divC; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(PAD.left, divY); c.lineTo(PAD.left + cW, divY); c.stroke();
+
+      if (range) {
+        const x1 = Math.max(PAD.left, xOfFull(range[0]));
+        const x2 = Math.min(PAD.left + cW, xOfFull(range[1]));
+        if (x2 > x1) {
+          c.fillStyle = selFill; c.fillRect(x1, aTop, x2 - x1, cH);
+          c.strokeStyle = selBord; c.lineWidth = 1; c.strokeRect(x1, aTop, x2 - x1, cH);
+        }
+      }
+
+      c.font = "bold 9px sans-serif"; c.textAlign = "center"; c.textBaseline = "top";
+      for (const p of phases) {
+        if (p.t < tA - 2 || p.t > tB + 2) continue;
+        const x = xOf(p.t);
+        c.setLineDash([3, 3]); c.strokeStyle = phaseC; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(x, aTop); c.lineTo(x, dBot); c.stroke();
+        c.setLineDash([]);
+        c.fillStyle = phaseC;
+        c.fillText(`第${p.phaseIdx ?? ""}波`, x, aTop + 2);
+      }
+
+      if (pts.length >= 2) {
+        const grad = c.createLinearGradient(0, aTop, 0, aBot);
+        grad.addColorStop(0, aFillT); grad.addColorStop(1, aFillB);
+        c.beginPath(); c.moveTo(pts[0]!.x, aBot); c.lineTo(pts[0]!.x, pts[0]!.y);
+        catmullSegments(pts);
+        c.lineTo(pts[pts.length - 1]!.x, aBot); c.closePath();
+        c.fillStyle = grad; c.fill();
+
+        c.beginPath(); c.moveTo(pts[0]!.x, pts[0]!.y);
+        catmullSegments(pts);
+        c.strokeStyle = lineC; c.lineWidth = 1.8; c.stroke();
+      }
+
+      c.strokeStyle = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.07)";
+      c.lineWidth = 0.5;
+      c.beginPath(); c.moveTo(PAD.left, dBot); c.lineTo(PAD.left + cW, dBot); c.stroke();
+
+      c.font = "bold 8px sans-serif"; c.textAlign = "center"; c.textBaseline = "bottom";
+      for (const d of drones) {
+        if (d.t < tA || d.t > tB) continue;
+        const x = xOf(d.t), cnt = d.value ?? 1, yt = yD(cnt);
+        const sg = c.createLinearGradient(0, yt, 0, dBot);
+        sg.addColorStop(0, sFillT); sg.addColorStop(1, sFillB);
+        c.fillStyle = sg; c.fillRect(x - 1.5, yt, 3, dBot - yt);
+        if (cnt > 1) { c.fillStyle = droneC; c.fillText(`\u00d7${cnt}`, x, yt - 1); }
+      }
+
+      c.restore();
+    }
+
+    function drawScrollFrame(wStart: number) {
+      const xOf = (t: number) => PAD.left + ((t - wStart) / windowDur) * cW;
+      const xTicks = Array.from({ length: 6 }, (_, i) => wStart + (i / 5) * windowDur);
+      const marg = windowDur * 0.06;
+      const visPts = sampled
+        .filter((e) => e.t >= wStart - marg && e.t <= wStart + windowDur + marg)
+        .map((e) => ({ x: xOf(e.t), y: yA(e.value ?? 0) }));
+      drawScene(xOf, wStart, wStart + windowDur, visPts, xTicks, null);
+    }
+
+    function drawFull(range: [number, number] | null) {
+      const xTicks = Array.from({ length: 7 }, (_, i) => (i / 6) * maxT);
+      drawScene(xOfFull, 0, maxT, fullPts, xTicks, range);
+    }
+
+    let animMode: "scroll" | "full" = "scroll";
+    let isDragging = false;
+    let dragStartT = 0;
+    let dragMoved  = false;
+
+    redrawRef.current = (r) => { if (animMode === "full") drawFull(r); };
+
+    function clientXToTime(clientX: number) {
+      const rect = cv.getBoundingClientRect();
+      return Math.max(0, Math.min(maxT, ((clientX - rect.left - PAD.left) / cW) * maxT));
+    }
+
+    function startScrollFrom(startSec: number) {
+      cancelAnimationFrame(animRef.current);
+      animMode = "scroll";
+      onRangeChange(null);
+      const scrollFrom = Math.max(0, Math.min(startSec, totalScroll));
+      const remainScroll = totalScroll - scrollFrom;
+      const baseRemainMs = Math.max(2000, remainScroll * 25);
+      let prevNow = performance.now();
+      let progress = 0;
+      function anim(now: number) {
+        const dt = now - prevNow; prevNow = now;
+        progress += dt * speedRef.current / baseRemainMs;
+        if (progress >= 1) { progress = 1; }
+        drawScrollFrame(scrollFrom + progress * remainScroll);
+        if (progress < 1) { animRef.current = requestAnimationFrame(anim); }
+        else { animMode = "full"; redrawRef.current = (r) => drawFull(r); drawFull(selectedRangeRef.current); onSkipReady(null); }
+      }
+      animRef.current = requestAnimationFrame(anim);
+      onSkipReady(() => skipToFull());
+    }
+    startScrollRef.current = startScrollFrom;
+
+    function skipToFull() {
+      cancelAnimationFrame(animRef.current);
+      animMode = "full";
+      redrawRef.current = (r) => drawFull(r);
+      drawFull(selectedRangeRef.current);
+      onRangeChange(null);
+      onSkipReady(null);
+    }
+
+    function onMouseDown(e: MouseEvent) {
+      if (animMode === "scroll") {
+        skipToFull();
+        return;
+      }
+      isDragging = true; dragMoved = false; dragStartT = clientXToTime(e.clientX);
+    }
+    function onMouseMove(e: MouseEvent) {
+      if (!isDragging || animMode !== "full") return;
+      dragMoved = true;
+      drawFull([Math.min(dragStartT, clientXToTime(e.clientX)), Math.max(dragStartT, clientXToTime(e.clientX))]);
+    }
+    function onMouseUp(e: MouseEvent) {
+      if (!isDragging || animMode !== "full") return;
+      isDragging = false;
+      if (!dragMoved) {
+        const clickT = clientXToTime(e.clientX);
+        startScrollFrom(clickT);
+        return;
+      }
+      const lo = Math.min(dragStartT, clientXToTime(e.clientX));
+      const hi = Math.max(dragStartT, clientXToTime(e.clientX));
+      if (hi - lo < maxT * 0.005) { onRangeChange(null); drawFull(null); }
+      else { onRangeChange([lo, hi]); drawFull([lo, hi]); }
+    }
+
+    cv.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    startScrollFrom(0);
+
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      cv.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [allEvents, onRangeChange]);
+
+  return <canvas ref={canvasRef} className="detailChart" style={{ cursor: "crosshair" }} />;
+}
+
+function DetailOverlay({
+  m,
+  runIdx,
+  onClose,
+}: {
+  m: MissionResult;
+  runIdx: number;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState<EventFilter>("all");
+  const [chartRange, setChartRange] = useState<[number, number] | null>(null);
+  const [speed, setSpeed] = useState(1);
+  const [playTrigger, setPlayTrigger] = useState<{ t: number; seq: number } | null>(null);
+  const [skipFn, setSkipFn] = useState<(() => void) | null>(null);
+  const allEvents = useMemo(() => buildEventTimeline(m), [m]);
+  const events = useMemo(() => {
+    let evts = filter === "all" ? allEvents : allEvents.filter((e) => e.kind === filter);
+    if (chartRange) evts = evts.filter((e) => e.t >= chartRange[0] && e.t <= chartRange[1]);
+    return evts;
+  }, [allEvents, filter, chartRange]);
+  const handlePlayFrom = (t: number) => setPlayTrigger({ t, seq: Date.now() });
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: events.length,
+    getScrollElement: () => bodyRef.current,
+    estimateSize: () => 28,
+    overscan: 12,
+  });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const counts = useMemo(() => {
+    const c: Record<EventKind, number> = { ticking: 0, drone: 0, phase: 0 };
+    for (const e of allEvents) c[e.kind]++;
+    return c;
+  }, [allEvents]);
+
+  return (
+    <div
+      className="detailOverlay"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="detailPanel">
+        <div className="detailHeader">
+          <span className="detailTitle">Run #{runIdx + 1} — 事件时间线</span>
+          <span className="detailTotalCount">{events.length.toLocaleString()} 条</span>
+          <button className="detailClose" onClick={onClose} title="关闭 (Esc)">✕</button>
+        </div>
+        <div className="chartControlsWrap">
+          <TimelineChart
+            allEvents={allEvents}
+            selectedRange={chartRange}
+            onRangeChange={setChartRange}
+            playFromTime={playTrigger}
+            speed={speed}
+            onSkipReady={(fn) => setSkipFn(() => fn)}
+          />
+          <div className="speedControls">
+            {[0.5, 1, 2, 3].map((s) => (
+              <button
+                key={s}
+                className={`speedBtn${speed === s ? " active" : ""}`}
+                onClick={() => setSpeed(s)}
+              >{s}×</button>
+            ))}
+            {skipFn && (
+              <button className="speedBtn speedBtnSkip" onClick={skipFn}>跳过 ⏭</button>
+            )}
+          </div>
+        </div>
+        <div className="detailFilters">
+          {FILTER_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              className={`detailFilter detailFilter-${key}${filter === key ? " active" : ""}`}
+              onClick={() => setFilter(key)}
+            >
+              {label}
+              {key !== "all" && <span className="detailFilterCount">{counts[key as EventKind]}</span>}
+            </button>
+          ))}
+          {chartRange && (
+            <div className="chartRangeTag">
+              <span>{chartRange[0].toFixed(1)}s – {chartRange[1].toFixed(1)}s</span>
+              <button className="chartRangeClear" onClick={() => setChartRange(null)} title="清除时间筛选">✕</button>
+            </div>
+          )}
+        </div>
+        <div className="detailTableHead">
+          <span className="dtTime">时间 (s)</span>
+          <span className="dtKind">类型</span>
+          <span className="dtVal">数值</span>
+        </div>
+        <div className="detailBody" ref={bodyRef}>
+          <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}>
+            {rowVirtualizer.getVirtualItems().map((vRow) => {
+              const ev = events[vRow.index]!;
+              const valText =
+                ev.kind === "ticking"
+                  ? String(ev.value ?? "-")
+                  : ev.kind === "drone"
+                    ? `×${ev.value ?? 1}`
+                    : `第 ${ev.phaseIdx} 波`;
+              return (
+                <div
+                  key={vRow.index}
+                  className={`dtRow dtRow-${ev.kind}`}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    transform: `translateY(${vRow.start}px)`,
+                    height: `${vRow.size}px`,
+                    width: "100%",
+                  }}
+                >
+                  <span className="dtTime dtTimeLink" onClick={() => handlePlayFrom(ev.t)} title="从此处播放">{ev.t.toFixed(2)}</span>
+                  <span className="dtKind">{KIND_LABELS[ev.kind]}</span>
+                  <span className="dtVal">{valText}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Page -------------------------------------------------------------------
+
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const lastFileRef = useRef<File | null>(null);
@@ -377,6 +875,7 @@ export default function Page() {
   const captureRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [copyingIdx, setCopyingIdx] = useState<number | null>(null);
   const [satPctMode, setSatPctMode] = useState<"total" | "active">("active");
+  const [detailState, setDetailState] = useState<{ m: MissionResult; idx: number } | null>(null);
 
   // ── theme ──
   const [theme, setThemeState] = useState<Theme>("e");
@@ -619,6 +1118,7 @@ export default function Page() {
   };
 
   return (
+    <>
     <div className="wrap">
       <header className="siteHeader">
         <span className="siteTitle">arbitration-log</span>
@@ -1262,6 +1762,15 @@ export default function Page() {
                       )}
                     </div>
                   </details>
+
+                  <div className="detailBtnRow" {...{ "data-html2canvas-ignore": "true" }}>
+                    <button
+                      className="detailBtn"
+                      onClick={() => setDetailState({ m, idx })}
+                    >
+                      查看时间线
+                    </button>
+                  </div>
                 </div>
               );
             })
@@ -1269,6 +1778,14 @@ export default function Page() {
         </div>
       </div>
     </div>
+
+    {detailState && (
+      <DetailOverlay
+        m={detailState.m}
+        runIdx={detailState.idx}
+        onClose={() => setDetailState(null)}
+      />
+    )}
+    </>
   );
 }
-

@@ -778,3 +778,174 @@ input[type="file"] { display: none; }
   text-align: right; font-variant-numeric: tabular-nums;
 }
 
+/* ── 查看事件时间线按钮 ── */
+.detailBtnRow {
+  display: flex; justify-content: flex-end;
+  padding: 8px 16px 12px;
+}
+.detailBtn {
+  background: none;
+  border: 1px solid var(--inset-border);
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.detailBtn:hover {
+  border-color: var(--text2);
+  color: var(--text);
+}
+
+/* ── 全屏 overlay ── */
+.detailOverlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(2px);
+}
+.detailPanel {
+  background: var(--card-bg);
+  border: 1px solid var(--inset-border);
+  border-radius: 12px;
+  width: min(920px, 92vw);
+  height: 88vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.4);
+}
+
+/* 标题栏 */
+.detailHeader {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--inset-border);
+  flex-shrink: 0;
+}
+.detailTitle {
+  font-size: 14px; font-weight: 800; color: var(--text); flex: 1;
+}
+.detailTotalCount {
+  font-size: 12px; color: var(--text2);
+  font-variant-numeric: tabular-nums;
+}
+.detailClose {
+  background: none; border: none; cursor: pointer;
+  color: var(--text2); font-size: 16px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px;
+  transition: color .15s;
+}
+.detailClose:hover { color: var(--text); }
+
+/* 筛选栏 */
+.detailFilters {
+  display: flex; gap: 6px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--inset-border);
+  flex-shrink: 0;
+}
+.detailFilter {
+  background: none;
+  border: 1px solid var(--inset-border);
+  border-radius: 20px;
+  font-size: 11px; color: var(--text2);
+  padding: 3px 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.detailFilter:hover { border-color: var(--text2); color: var(--text); }
+.detailFilter.active { background: var(--text2); color: var(--card-bg); border-color: var(--text2); }
+.detailFilterCount {
+  font-variant-numeric: tabular-nums;
+  opacity: .75;
+}
+
+/* 表头 */
+.detailTableHead {
+  display: flex; align-items: center;
+  padding: 0 18px;
+  height: 30px;
+  background: var(--inset);
+  border-bottom: 1px solid var(--inset-border);
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700; color: var(--text2);
+}
+
+/* 折线图 */
+.chartControlsWrap {
+  position: relative; flex-shrink: 0;
+}
+.detailChart {
+  width: 100%; height: 220px; display: block;
+  border-bottom: 1px solid var(--inset-border);
+  background: var(--card-bg);
+}
+.speedControls {
+  position: absolute; top: 6px; right: 8px;
+  display: flex; gap: 3px; z-index: 2;
+}
+.speedBtn {
+  background: var(--card-bg); border: 1px solid var(--inset-border);
+  border-radius: 4px; padding: 1px 7px; font-size: 11px;
+  color: var(--text2); cursor: pointer; transition: all .15s;
+  line-height: 1.5;
+}
+.speedBtn:hover { border-color: var(--text2); color: var(--text); }
+.speedBtn.active {
+  background: var(--text2); color: var(--card-bg);
+  border-color: var(--text2);
+}
+.speedBtnSkip {
+  margin-left: 2px;
+  border-color: var(--text2);
+}
+.dtTimeLink {
+  cursor: pointer; text-decoration: underline;
+  text-decoration-color: transparent; transition: text-decoration-color .15s;
+}
+.dtTimeLink:hover {
+  text-decoration-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
+}
+.chartRangeTag {
+  display: flex; align-items: center; gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--accent-subtle, rgba(80,80,220,.12));
+  border: 1px solid var(--accent-line, rgba(80,80,220,.30));
+  font-size: 11px; font-weight: 600; color: var(--text1);
+  white-space: nowrap;
+}
+.chartRangeClear {
+  background: none; border: none; cursor: pointer;
+  color: var(--text2); font-size: 11px; padding: 0 2px; line-height: 1;
+  opacity: 0.7;
+}
+.chartRangeClear:hover { opacity: 1; }
+
+/* 滚动体 */
+.detailBody {
+  flex: 1; overflow-y: scroll; overflow-x: hidden;
+}
+
+/* 行 */
+.dtRow {
+  display: flex; align-items: center;
+  padding: 0 18px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--inset-border);
+  box-sizing: border-box;
+}
+.dtRow:hover { background: var(--inset); }
+.dtRow-drone  { background: rgba(80,160,240,.1); }
+.dtRow-phase  { background: rgba(200,155,20,.14); font-weight: 700; }
+
+/* 列宽 */
+.dtTime { width: 80px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--text2); }
+.dtKind { width: 110px; flex-shrink: 0; }
+.dtVal  { flex: 1; font-variant-numeric: tabular-nums; }
+.dtRow-ticking .dtKind { color: var(--text2); }
+.dtRow-drone   .dtKind { color: #5ab4ff; }
+.dtRow-phase   .dtKind { color: #ffc850; }
+

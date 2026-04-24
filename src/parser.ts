@@ -476,14 +476,15 @@ export async function parseRecentValidEeLogFromFile(
         }
         cur.curPhaseIndex = cur.interCompletedRounds + 1;
       } else if (reDefenseRewardTransitionOut.test(line)) {
-        if (cur.stateStartedTime != null) {
-          const dt = parseTime(line);
-          if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
-        }
         if (cur.missionKind === "mirrorDefense") {
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
           cur.roundCount = cur.interCompletedRounds;
           if (cur.phaseKind !== "wave") {
+            // round-type mirrorDefense: push boundary (wave-type already handled by reLoopDefenseWave)
+            if (cur.stateStartedTime != null) {
+              const dt = parseTime(line);
+              if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
+            }
             cur.phaseKind = "round";
             if (cur.interCompletedRounds === 1 && cur.pendingDronesBeforeFirstRoundMarker > 0) {
               if (cur.phases.length < 1) cur.phases.push(0);
@@ -492,7 +493,13 @@ export async function parseRecentValidEeLogFromFile(
             }
             cur.curPhaseIndex = cur.interCompletedRounds + 1;
           }
+          // wave-type mirrorDefense: skip push (reLoopDefenseWave already pushed it)
         } else if (cur.missionKind !== "defense" && cur.interHasTransmissionMarker !== true) {
+          // interception without transmission marker: push boundary
+          if (cur.stateStartedTime != null) {
+            const dt = parseTime(line);
+            if (dt != null) cur.phaseBoundaryTimesRaw.push(dt - cur.stateStartedTime);
+          }
           cur.missionKind = "interception";
           cur.phaseKind = "round";
           cur.interCompletedRounds = (cur.interCompletedRounds ?? 0) + 1;
@@ -504,6 +511,7 @@ export async function parseRecentValidEeLogFromFile(
           }
           cur.curPhaseIndex = cur.interCompletedRounds + 1;
         }
+        // defense mission: skip push (reDefenseWave already pushed it)
       }
     }
 
