@@ -46,6 +46,9 @@ const reTimePrefix = /^!?(\d+(?:\.\d+)?)\s+/;
 // 任务开始标记
 const reStartMissionName =
   /Script \[Info\]: ThemedSquadOverlay\.lua: Mission name:\s*(.+?)\s*-\s*仲裁/;
+// 兼容 "Cached mission name=..." 格式（部分版本日志使用 = 而非 :，且带 Cached 前缀）
+const reStartCachedMissionName =
+  /Script \[Info\]: ThemedSquadOverlay\.lua: Cached mission name=(.+?)\s*-\s*仲裁/;
 const reStartMissionVote =
   /Script \[Info\]: ThemedSquadOverlay\.lua: ShowMissionVote\s+(.+?)\s*-\s*仲裁/;
 const reVoteNodeId = /\(([A-Za-z0-9_]+)_EliteAlert\)/;
@@ -300,7 +303,7 @@ export async function parseRecentValidEeLogFromFile(
   const feedLine = (line: string) => {
     lineNo++;
 
-    const mStartName = line.match(reStartMissionName);
+    const mStartName = line.match(reStartMissionName) ?? line.match(reStartCachedMissionName);
     const mStartVote = line.match(reStartMissionVote);
     if (mStartName || mStartVote) {
       if (cur) {
@@ -358,7 +361,13 @@ export async function parseRecentValidEeLogFromFile(
     // 补抓 NodeId
     if (!cur.nodeId && cur.needHostLines > 0) {
       const h = line.match(reHostLoading);
-      if (h) cur.nodeId = h[1];
+      if (h) {
+        cur.nodeId = h[1];
+      } else {
+        // 兼容 Cached mission name= 启动的 run：从紧跟的 ShowMissionVote 行提取 NodeId
+        const v = line.match(reVoteNodeId);
+        if (v?.[1]) cur.nodeId = v[1];
+      }
       cur.needHostLines--;
     }
 
